@@ -99,6 +99,14 @@ export interface StoreVisit {
   overallReview?: string;
   conditions?: string;
   photoUrl?: string; // JSON string of Photo[]
+
+  // OpenPOI API で特定した位置。licenses / attributions は検索結果と一緒に保存する
+  latitude?: number | null;
+  longitude?: number | null;
+  address?: string;
+  poiName?: string;
+  poiLicenses?: string[];
+  poiAttributions?: string[];
   
   createdAt: string;
   updatedAt: string;

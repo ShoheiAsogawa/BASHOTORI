@@ -83,3 +83,15 @@ input[type="date"] {
   min-height: 42px;
 }
 
+.store-pin {
+  background: transparent;
+  border: none;
+}
+
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  font-family: inherit;
+  z-index: 0;
+}
+

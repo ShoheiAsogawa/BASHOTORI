@@ -1,9 +1,10 @@
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Icon } from './Icon';
 import { RANKS, JUDGMENT, ENVIRONMENTS, IMITATIONS, REGISTER_COUNTS, COMPETITOR_COUNTS, TRAFFIC_LEVELS, CUSTOMER_SEGMENTS, FLOW_LINE_RATINGS, SEASONALITY_OPTIONS, BUSY_DAY_OPTIONS, STAFF_COUNTS, SPACE_SIZES } from '../lib/constants';
 import { PREFECTURES, type Prefecture } from '../types';
 import { formatDate, generateId } from '../lib/utils';
 import { uploadImage, deleteImage, compressImage } from '../lib/storage';
+import { suggestPlaces, writePoiCache, type PoiPlace } from '../lib/openpoi';
 import type { StoreVisit, Photo, CustomerSegment } from '../types';
 
 interface StoreFormModalProps {
@@ -75,15 +76,75 @@ export function StoreFormModal({
     busyDayNote: initialData?.busyDayNote || '',
     overallReview: initialData?.overallReview || '',
     conditions: initialData?.conditions || '',
+    latitude: initialData?.latitude ?? null,
+    longitude: initialData?.longitude ?? null,
+    address: initialData?.address || '',
+    poiName: initialData?.poiName || '',
+    poiLicenses: initialData?.poiLicenses || [],
+    poiAttributions: initialData?.poiAttributions || [],
     photos: initialPhotos,
   });
+  const [placeSuggestions, setPlaceSuggestions] = useState<PoiPlace[]>([]);
+  const [nameFocused, setNameFocused] = useState(false);
 
   const [uploading, setUploading] = useState(false);
   const [viewingImage, setViewingImage] = useState<Photo | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => {
+      const next = { ...prev, [name]: value };
+      if (name === 'facilityName') {
+        next.latitude = null;
+        next.longitude = null;
+        next.address = '';
+        next.poiName = '';
+        next.poiLicenses = [];
+        next.poiAttributions = [];
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (readOnly) return;
+    const query = formData.facilityName.trim();
+    if (query.length < 2) {
+      setPlaceSuggestions([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      suggestPlaces(query, 5, controller.signal)
+        .then((places) => {
+          if (!controller.signal.aborted) setPlaceSuggestions(places);
+        })
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === 'AbortError') return;
+          setPlaceSuggestions([]);
+        });
+    }, 350);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [formData.facilityName, readOnly]);
+
+  const selectPlace = (place: PoiPlace) => {
+    writePoiCache(place.name, place.prefecture || formData.prefecture, place);
+    setFormData((prev) => ({
+      ...prev,
+      facilityName: place.name,
+      prefecture: place.prefecture || prev.prefecture,
+      address: place.address,
+      latitude: place.latitude,
+      longitude: place.longitude,
+      poiName: place.name,
+      poiLicenses: place.licenses,
+      poiAttributions: place.attributions,
+    }));
+    setPlaceSuggestions([]);
+    setNameFocused(false);
   };
 
   const handleDemographicsChange = (segment: CustomerSegment) => {
@@ -290,7 +351,7 @@ export function StoreFormModal({
                   />
                 </div>
               </div>
-              <div className="mb-4">
+              <div className="relative mb-4">
                 <label className="block text-xs font-bold text-slate-600 mb-1.5">施設名</label>
                 <input
                   required
@@ -298,10 +359,37 @@ export function StoreFormModal({
                   name="facilityName"
                   value={formData.facilityName}
                   onChange={handleChange}
+                  onFocus={() => setNameFocused(true)}
+                  onBlur={() => setNameFocused(false)}
                   placeholder="例: イオンモール〇〇店"
                   disabled={readOnly}
+                  autoComplete="off"
                   className="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg font-bold text-slate-800 text-lg focus:ring-2 focus:ring-orange-500 outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                 />
+                {nameFocused && placeSuggestions.length > 0 && (
+                  <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                    {placeSuggestions.map((place) => (
+                      <li key={`${place.name}-${place.latitude}-${place.longitude}`}>
+                        <button
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => selectPlace(place)}
+                          className="w-full px-3 py-2 text-left hover:bg-orange-50"
+                        >
+                          <span className="block text-sm font-bold text-slate-800">{place.name}</span>
+                          <span className="block text-xs text-slate-500">
+                            {[place.prefecture, place.city, place.address].filter(Boolean).join(' ')}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {formData.latitude != null && formData.longitude != null && (
+                  <p className="mt-1 text-xs text-emerald-700">
+                    地図上の位置を設定済み{formData.address ? `（${formData.address}）` : ''}
+                  </p>
+                )}
               </div>
               <div className="mb-4">
                 <label className="block text-xs font-bold text-slate-600 mb-1.5">都道府県</label>
