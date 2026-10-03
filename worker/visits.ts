@@ -1,5 +1,6 @@
 import type { AuthUser } from './auth';
 import { json } from './http';
+import { locateFacility, type PoiPlace } from './openpoi';
 
 const COLUMNS: Record<string, string> = {
   date: 'date',
@@ -96,6 +97,7 @@ async function writeVisit(request: Request, env: Env, user: AuthUser, id: string
 
   const body = (await request.json()) as Record<string, unknown>;
   const now = new Date().toISOString();
+  await ensureLocation(body, id, env);
 
   if (!id) {
     const visitId = crypto.randomUUID();
@@ -139,6 +141,49 @@ async function readVisit(env: Env, id: string) {
   const row = await env.DB.prepare('SELECT * FROM store_visits WHERE id = ?').bind(id).first<VisitRow>();
   if (!row) return null;
   return toVisit(row);
+}
+
+async function ensureLocation(body: Record<string, unknown>, id: string | null, env: Env): Promise<void> {
+  let facilityName = typeof body.facilityName === 'string' ? body.facilityName : '';
+  let prefecture = typeof body.prefecture === 'string' ? body.prefecture : '';
+  let latitude = body.latitude;
+  let longitude = body.longitude;
+
+  if (id) {
+    const existing = await env.DB.prepare(
+      'SELECT facility_name, prefecture, latitude, longitude FROM store_visits WHERE id = ?',
+    ).bind(id).first<{ facility_name: string; prefecture: string | null; latitude: number | null; longitude: number | null }>();
+    if (!existing) return;
+    if (!facilityName) facilityName = existing.facility_name;
+    if (!('prefecture' in body)) prefecture = existing.prefecture || '';
+    if (!('latitude' in body)) latitude = existing.latitude;
+    if (!('longitude' in body)) longitude = existing.longitude;
+  }
+
+  if (hasCoordinates(latitude, longitude) || facilityName.trim().length < 2) return;
+
+  try {
+    const place = await locateFacility(facilityName, prefecture || undefined, AbortSignal.timeout(8000));
+    if (!place) return;
+    assignPlace(body, place, prefecture);
+  } catch (error) {
+    console.error('OpenPOI lookup failed', error instanceof Error ? error.message : 'unknown');
+  }
+}
+
+function hasCoordinates(latitude: unknown, longitude: unknown): boolean {
+  return typeof latitude === 'number' && Number.isFinite(latitude)
+    && typeof longitude === 'number' && Number.isFinite(longitude);
+}
+
+function assignPlace(body: Record<string, unknown>, place: PoiPlace, prefecture: string): void {
+  body.latitude = place.latitude;
+  body.longitude = place.longitude;
+  if (typeof body.address !== 'string' || !body.address.trim()) body.address = place.address || null;
+  body.poiName = place.name;
+  body.poiLicenses = place.licenses;
+  body.poiAttributions = place.attributions;
+  if (!prefecture && place.prefecture) body.prefecture = place.prefecture;
 }
 
 function serialize(key: string, value: unknown): unknown {
