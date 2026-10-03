@@ -1,0 +1,8 @@
+{
+  "name": "bashotori",
+  "main": "worker/index.ts",
+  // Live Worker bashotori was last deployed on 2026-09-01. The script
+  // download does not include the compatibility date, so this matches that day.
+  "compatibility_date": "2026-09-01",
+  "account_id": "d2874089eebcda705bf220d39f117aec"
+}
