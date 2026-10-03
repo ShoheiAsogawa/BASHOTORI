@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { Icon } from '../components/Icon';
 import { StoreMap, rankColor, type MapPoint } from '../components/StoreMap';
-import { getStoreVisits, updateStoreVisitLocation } from '../lib/supabase';
-import { isAdmin } from '../lib/auth';
+import { getStoreVisits } from '../lib/supabase';
 import { JUDGMENT, RANKS } from '../lib/constants';
-import { locateFacility, locationKey, type PoiPlace } from '../lib/openpoi';
+import { locationKey, type PoiPlace } from '../lib/openpoi';
 import { formatDateJP } from '../lib/utils';
 import type { StoreVisit } from '../types';
 
@@ -19,8 +18,6 @@ interface FacilityGroup {
 export default function MapView() {
   const [visits, setVisits] = useState<StoreVisit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [resolved, setResolved] = useState<Record<string, PoiPlace | null>>({});
-  const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRank, setFilterRank] = useState('ALL');
@@ -38,61 +35,10 @@ export default function MapView() {
   }, []);
 
   const groups = useMemo(() => groupVisits(visits), [visits]);
-  const resolvedRef = useRef<Record<string, PoiPlace | null>>({});
-
-  useEffect(() => {
-    const missing = groups.filter((group) => !storedPlace(group.visits) && resolvedRef.current[group.key] === undefined);
-    if (missing.length === 0) return;
-
-    let cancelled = false;
-    setProgress({ done: 0, total: missing.length });
-
-    const locate = async () => {
-      const admin = await isAdmin();
-      for (let index = 0; index < missing.length; index += 1) {
-        if (cancelled) return;
-        const group = missing[index];
-        let place: PoiPlace | null = null;
-        try {
-          place = await locateFacility(group.latest.facilityName, group.latest.prefecture);
-        } catch (locateError) {
-          console.error(locateError);
-          if (!cancelled) setError('一部の店舗は OpenPOI API で位置を取得できませんでした。');
-        }
-        if (cancelled) return;
-        if (place && admin) {
-          for (const visit of group.visits) {
-            if (storedPlace([visit])) continue;
-            const saved = await updateStoreVisitLocation(visit.id, {
-              latitude: place.latitude,
-              longitude: place.longitude,
-              address: place.address,
-              name: place.name,
-              licenses: place.licenses,
-              attributions: place.attributions,
-            });
-            if (!saved) break;
-          }
-        }
-        resolvedRef.current = { ...resolvedRef.current, [group.key]: place };
-        setResolved(resolvedRef.current);
-        setProgress({ done: index + 1, total: missing.length });
-      }
-    };
-
-    locate();
-    return () => {
-      cancelled = true;
-    };
-  }, [groups]);
 
   const rows = useMemo(() => {
     return groups
-      .map((group) => {
-        const stored = storedPlace(group.visits);
-        const place = stored || (group.key in resolved ? resolved[group.key] : undefined);
-        return { group, place };
-      })
+      .map((group) => ({ group, place: storedPlace(group.visits) }))
       .filter(({ group }) => {
         const latest = group.latest;
         const matchesSearch =
@@ -103,7 +49,7 @@ export default function MapView() {
         const matchesJudgment = filterJudgment === 'ALL' || latest.judgment === filterJudgment;
         return matchesSearch && matchesRank && matchesJudgment;
       });
-  }, [groups, resolved, searchTerm, filterRank, filterJudgment]);
+  }, [groups, searchTerm, filterRank, filterJudgment]);
 
   const points: MapPoint[] = rows.flatMap(({ group, place }) => {
     if (!place) return [];
@@ -134,14 +80,11 @@ export default function MapView() {
                 <Icon name="MapPin" className="text-orange-500" /> 視察マップ
               </h2>
               <p className="text-sm text-slate-500 mt-1">
-                記録済みの施設を OpenPOI API で位置検索し、地図に表示します。ピンの色は最新のランクです。
+                保存済みの位置だけを表示します。ピンの色は最新のランクです。
               </p>
             </div>
             <div className="text-sm font-bold text-slate-600">
               {points.length} 件を表示
-              {progress.total > 0 && progress.done < progress.total && (
-                <span className="ml-2 text-orange-600">位置を検索中 {progress.done}/{progress.total}</span>
-              )}
             </div>
           </div>
 
@@ -214,7 +157,7 @@ export default function MapView() {
                                   {group.visits.length > 1 ? ` · ${group.visits.length}件` : ''}
                                 </span>
                                 <span className="block text-xs text-slate-400">
-                                  {place ? (place.address || place.name) : place === null ? '位置を特定できませんでした' : '位置を検索中'}
+                                  {place ? (place.address || place.name) : '位置未登録'}
                                 </span>
                               </span>
                             </div>
@@ -238,16 +181,6 @@ export default function MapView() {
           )}
 
           <p className="mt-4 text-xs text-slate-400">
-            施設検索:{' '}
-            <a
-              href="https://openpoiapi.com/attribution.html"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-slate-600"
-            >
-              OpenPOI API
-            </a>
-            {' / '}
             地図:{' '}
             <a
               href="https://maps.gsi.go.jp/development/ichiran.html"
@@ -255,7 +188,7 @@ export default function MapView() {
               rel="noopener noreferrer"
               className="underline hover:text-slate-600"
             >
-              国土地理院
+              国土地理院（淡色地図）
             </a>
           </p>
         </div>

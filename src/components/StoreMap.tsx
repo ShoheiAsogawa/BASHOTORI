@@ -45,6 +45,7 @@ interface StoreMapProps {
   onPick?: (latitude: number, longitude: number) => void;
   focus?: MapFocus | null;
   autoFit?: boolean;
+  className?: string;
 }
 
 export function StoreMap({
@@ -55,6 +56,7 @@ export function StoreMap({
   onPick,
   focus = null,
   autoFit = true,
+  className,
 }: StoreMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -76,10 +78,13 @@ export function StoreMap({
       zoomControl: true,
     }).setView([36.5, 137.5], 5);
 
-    L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
+    L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
       attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener noreferrer">国土地理院</a>',
       maxZoom: 18,
     }).addTo(map);
+
+    window.setTimeout(() => map.invalidateSize(), 200);
+    window.setTimeout(() => map.invalidateSize(), 700);
 
     const markUserAdjusted = () => {
       if (!programmaticRef.current) userAdjustedRef.current = true;
@@ -113,7 +118,7 @@ export function StoreMap({
       const size = selected ? 18 : 14;
       const icon = L.divIcon({
         className: 'store-pin',
-        html: `<span style="display:block;width:${size}px;height:${size}px;border-radius:9999px;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(15,23,42,.45)"></span>`,
+        html: `<span style="display:block;width:${size}px;height:${size}px;border-radius:9999px;background:${color};border:2px solid #fff"></span>`,
         iconSize: [size, size],
         iconAnchor: [size / 2, size / 2],
       });
@@ -198,8 +203,8 @@ export function StoreMap({
   }, [selectedId, points]);
 
   return (
-    <div className="relative z-0 h-full min-h-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-      <div ref={containerRef} className="h-full min-h-[420px] w-full" role="application" aria-label="視察店舗の地図" />
+    <div className={`relative z-0 overflow-hidden rounded-2xl border border-slate-200 bg-[#f7f5f2] ${className ?? 'h-full min-h-[420px]'}`}>
+      <div ref={containerRef} className="h-full w-full" role="application" aria-label="視察店舗の地図" />
     </div>
   );
 }
