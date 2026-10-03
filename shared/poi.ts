@@ -119,6 +119,10 @@ const BRANDS = [
 
 const GENERIC_TAILS = new Set(['本町', '駅前', '中央', '西口', '東口', '南口', '北口', '新町']);
 
+const BRAND_FAMILIES = [
+  ['イオンモール', 'イオンタウン', 'イオンスタイル'],
+];
+
 const ALIASES: Array<[RegExp, string]> = [
   [/KINSHOストア/gi, '近商ストア'],
   [/KINSHO/gi, '近商'],
@@ -160,6 +164,25 @@ export function cleanFacilityQuery(name: string): string {
     value = next;
   }
   return value;
+}
+
+/** 同じ商業施設の屋号違いを、検索と採点の両方で試す。 */
+export function queryForms(name: string): string[] {
+  const cleaned = cleanFacilityQuery(name);
+  const aliased = applyAliases(name);
+  const forms = new Set<string>([cleaned]);
+  if (aliased !== cleaned) forms.add(aliased);
+  for (const form of [...forms]) {
+    for (const family of BRAND_FAMILIES) {
+      const brand = family.find((item) => form.startsWith(item) && form.length - item.length >= 2);
+      if (!brand) continue;
+      const rest = form.slice(brand.length);
+      for (const sibling of family) {
+        if (sibling !== brand) forms.add(`${sibling}${rest}`);
+      }
+    }
+  }
+  return [...forms];
 }
 
 /** 店名のゆれ（KINSHO、不二家、ハイフン）を検索用に寄せる。 */
@@ -335,15 +358,20 @@ function brandInPlace(brand: string, name: string, area: string): boolean {
   return occursAsBrand(brand, name) || containsToken(area, brand);
 }
 
-function locationCovered(location: string, haystack: string): boolean {
+const WEAK_PLACE_TOKENS = new Set(['中央', '本町', '駅前', '西口', '東口', '南口', '北口', '新町', '本店']);
+
+function locationCovered(location: string, name: string, area: string): boolean {
+  const haystack = `${name}${area}`;
   if (containsToken(haystack, location)) return true;
   if (location.length < 4) return false;
   const limit = Math.min(location.length - 2, 8);
   for (let index = 2; index <= limit; index += 1) {
     const head = location.slice(0, index);
     const tail = location.slice(index);
-    if (head.length < 2 || tail.length < 2 || Math.max(head.length, tail.length) < 3) continue;
-    if (containsToken(haystack, head) && containsToken(haystack, tail)) return true;
+    if (head.length < 2 || tail.length < 2) continue;
+    if (!containsToken(haystack, head) || !containsToken(haystack, tail)) continue;
+    if (Math.max(head.length, tail.length) < 3 && (WEAK_PLACE_TOKENS.has(head) || WEAK_PLACE_TOKENS.has(tail))) continue;
+    return true;
   }
   return false;
 }
@@ -378,7 +406,6 @@ function scoreOne(query: string, prefecture: string | undefined, place: PoiPlace
   const normalizedQuery = foldLoose(cleanFacilityQuery(query));
   const name = foldLoose(place.name);
   const area = foldLoose(`${place.prefecture}${place.city}${place.address}`);
-  const haystack = `${name}${area}`;
   if (normalizedQuery.length < 2 || (!name && !area)) return 0;
   if (!inJapan(place.latitude, place.longitude)) return 0;
   if (/移動スーパー|号車/.test(place.name) && !/移動スーパー|号車/.test(normalizedQuery)) return 0;
@@ -386,10 +413,12 @@ function scoreOne(query: string, prefecture: string | undefined, place: PoiPlace
   const { brand, location } = splitBrand(query);
   const brandFold = foldLoose(brand);
   const locationFold = foldLoose(location);
+  const extendsQuery = name.startsWith(normalizedQuery);
+  const extra = extendsQuery ? name.slice(normalizedQuery.length) : '';
+  if (extendsQuery && extra !== '' && extra !== '店' && extra !== '本店') return 0;
   let score = 0;
   let kind: 'name' | 'address' | 'tokens' | 'split' = 'name';
-  if (name === normalizedQuery || name === `${normalizedQuery}店`) score = 230;
-  else if (name.startsWith(normalizedQuery)) score = 200;
+  if (name === normalizedQuery || name === `${normalizedQuery}店` || name === `${normalizedQuery}本店`) score = 230;
   else if (name.includes(normalizedQuery)) score = 170;
   else if (normalizedQuery.length >= 4 && area.includes(normalizedQuery)) {
     score = 130;
@@ -398,7 +427,7 @@ function scoreOne(query: string, prefecture: string | undefined, place: PoiPlace
     brandFold
     && locationFold.length >= 2
     && brandInPlace(brandFold, name, area)
-    && (locationFold === '本店' || locationCovered(locationFold, haystack))
+    && (locationFold === '本店' || locationCovered(locationFold, name, area))
   ) {
     score = 110;
     kind = 'tokens';
@@ -432,10 +461,7 @@ function scoreOne(query: string, prefecture: string | undefined, place: PoiPlace
 }
 
 export function scorePlace(query: string, prefecture: string | undefined, place: PoiPlace): number {
-  const cleaned = cleanFacilityQuery(query);
-  const aliased = applyAliases(query);
-  const forms = foldName(aliased) === foldName(cleaned) ? [cleaned] : [cleaned, aliased];
-  return Math.max(...forms.map((form) => scoreOne(form, prefecture, place)));
+  return Math.max(...queryForms(query).map((form) => scoreOne(form, prefecture, place)));
 }
 
 export function placeGap(query: string, place: PoiPlace): number {
@@ -568,11 +594,27 @@ export async function locateFacility(
   const split = splitBrand(cleaned);
   const aliasSplit = splitBrand(aliased);
   const brands = [...new Set([shortestBrand(cleaned), shortestBrand(aliased), split.brand, aliasSplit.brand].filter(Boolean))];
+  const extraForms = queryForms(facilityName).filter((form) => foldName(form) !== foldName(cleaned) && foldName(form) !== foldName(aliased));
+  for (const form of extraForms.slice(0, 2)) {
+    add(await collect(signal, () => suggestPlaces(form, 5, signal)));
+    add(await collect(signal, () => searchPlaces(compactQuery(form), 10, undefined, signal)));
+    if (strong()) return best();
+  }
   const location = split.location || aliasSplit.location;
   const bbox = prefecture ? PREFECTURE_BBOX[prefecture] : undefined;
   if (bbox) {
     for (const brand of brands.slice(0, 2)) {
       add(await collect(signal, () => searchPlaces(brand, 200, bbox, signal)));
+      if (strong()) return best();
+    }
+  }
+
+  const locationHead = location.slice(0, Math.min(3, location.length));
+  const suggestBrand = split.brand || aliasSplit.brand;
+  if (suggestBrand && locationHead.length >= 2) {
+    const prefix = `${suggestBrand}${locationHead}`;
+    if (foldName(prefix) !== foldName(searchTerm) && foldName(prefix) !== foldName(aliasTerm)) {
+      add(await collect(signal, () => suggestPlaces(prefix, 8, signal)));
       if (strong()) return best();
     }
   }

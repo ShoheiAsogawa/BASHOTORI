@@ -1,4 +1,4 @@
-import { applyAliases, cleanFacilityQuery, pickBestPlace, type PoiPlace } from '../shared/poi.ts';
+import { applyAliases, cleanFacilityQuery, pickBestPlace, scorePlace, splitBrand, type PoiPlace } from '../shared/poi.ts';
 
 const SEARCH_URL = 'https://nominatim.openstreetmap.org/search';
 const USER_AGENT = 'BASHOTORI/1.0 (https://bashotori.com)';
@@ -29,15 +29,48 @@ interface NominatimItem {
   };
 }
 
+/** 連結された店名を、表記ゆれとブランド・地名を離した検索語に展開する。 */
+export function nominatimQueries(facilityName: string, prefecture?: string): string[] {
+  const cleaned = cleanFacilityQuery(facilityName).replace(/本店$/u, '');
+  const aliased = applyAliases(facilityName).replace(/本店$/u, '');
+  const forms = aliased === cleaned ? [cleaned] : [cleaned, aliased];
+  const area = prefecture?.trim() || '';
+  const queries: string[] = [];
+  const add = (parts: string[]) => {
+    const query = parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    if (query.length >= 2 && !queries.includes(query)) queries.push(query);
+  };
+  for (const facility of forms) {
+    if (facility.length < 2) continue;
+    add([facility, area]);
+    const { brand, location } = splitBrand(facility);
+    if (brand && location.length >= 2) {
+      add([brand, location, area]);
+      if (location.length >= 4) add([brand, location.slice(0, 2), area]);
+      if (location.length >= 6) add([brand, location.slice(0, 3), area]);
+    }
+  }
+  return queries;
+}
+
 /** OpenPOI で店が決まらないときだけ使う。ブラウザからは呼ばない。 */
 export async function locateByNominatim(
   facilityName: string,
   prefecture?: string,
   signal?: AbortSignal,
 ): Promise<PoiPlace | null> {
-  const facility = applyAliases(cleanFacilityQuery(facilityName)).replace(/本店$/u, '');
-  if (facility.length < 2) return null;
-  const query = [facility, prefecture?.trim() || ''].filter(Boolean).join(' ');
+  const queries = nominatimQueries(facilityName, prefecture);
+  const places: PoiPlace[] = [];
+  let best: PoiPlace | null = null;
+  for (const query of queries) {
+    places.push(...await fetchNominatim(query, signal));
+    best = pickBestPlace(facilityName, prefecture, places);
+    if (best && scorePlace(facilityName, prefecture, best) >= 140) return best;
+  }
+  return best;
+}
+
+async function fetchNominatim(query: string, signal?: AbortSignal): Promise<PoiPlace[]> {
   const url = new URL(SEARCH_URL);
   url.searchParams.set('q', query);
   url.searchParams.set('format', 'jsonv2');
@@ -59,7 +92,7 @@ export async function locateByNominatim(
     throw new Error(`Nominatim request failed: ${response.status}`);
   }
   const items = (await response.json()) as NominatimItem[];
-  return pickBestPlace(facilityName, prefecture, items.map(toPlace).filter((place): place is PoiPlace => place !== null));
+  return items.map(toPlace).filter((place): place is PoiPlace => place !== null);
 }
 
 function toPlace(item: NominatimItem): PoiPlace | null {
