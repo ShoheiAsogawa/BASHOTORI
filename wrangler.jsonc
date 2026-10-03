@@ -1,8 +1,15 @@
 {
-  "name": "bashotori-api",
+  "name": "bashotori",
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-03",
   "account_id": "d2874089eebcda705bf220d39f117aec",
+  "workers_dev": true,
+  "keep_vars": true,
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
   "observability": {
     "enabled": true,
     "traces": {

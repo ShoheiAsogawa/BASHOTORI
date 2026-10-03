@@ -1,4 +1,5 @@
 import { authenticate } from './auth';
+import { handleGemini } from './gemini';
 import { reversePlace } from './nominatim';
 import { corsHeaders, isResponse, json } from './http';
 import { handlePhotos, readPhoto } from './photos';
@@ -6,11 +7,15 @@ import { handleVisits } from './visits';
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname === '/api/gemini') {
+      return handleGemini(request, env);
+    }
+
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
-    const url = new URL(request.url);
     if (request.method === 'GET' && url.pathname.startsWith('/api/photos/')) {
       const key = decodeURIComponent(url.pathname.slice('/api/photos/'.length));
       if (!key) return json({ error: 'Not found' }, 404);
