@@ -19,8 +19,8 @@
   "vars": {
     "SUPABASE_URL": "https://nfxzluqlprkelwociuaa.supabase.co"
   },
-  // SUPABASE_PUBLISHABLE_KEY は `wrangler secret put SUPABASE_PUBLISHABLE_KEY` で入れる。
-  // ログイン確認だけに使い、Supabase のテーブルには書き込まない。
+  // SUPABASE_PUBLISHABLE_KEY と DEEPSEEK_API_KEY は secret で入れる。
+  // 公開キーはログイン確認だけに使い、Supabase のテーブルには書き込まない。
   "d1_databases": [
     {
       "binding": "DB",

@@ -29,7 +29,7 @@ export default function StoreSearchView() {
 
     const prompt = `
 あなたは日本の商業施設リサーチャーです。
-**重要**: 必ずGoogle検索ツール（google_search）を使用して、実在する店舗情報のみを取得してください。
+**重要**: ウェブ検索で確認できた、実在する施設だけを答えてください。
 虚偽の情報や推測による情報は一切含めないでください。
 
 以下の地域の、催事イベント（買取イベント）の開催に適した集客力のある商業施設を5〜10件リストアップしてください。
@@ -37,12 +37,12 @@ export default function StoreSearchView() {
 ターゲット地域: ${location}
 
 **検索要件**:
-1. Google検索ツールを使用して、実在する商業施設を検索してください
+1. ウェブ検索で、実在する商業施設を調べてください
 2. 各施設について、以下の情報を必ず確認してください：
    - 施設名（正確な名称）
    - 正確な住所
    - ジャンル・業種
-   - GoogleマップのURL（実在する施設のみ）
+   - 地図で開ける住所
 
 **出力形式**（マークダウン）:
 各施設について、以下の形式で出力してください：
@@ -57,15 +57,15 @@ export default function StoreSearchView() {
 **注意事項**:
 - 実在しない施設は絶対に含めないでください
 - 推測や創作の情報は含めないでください
-- Google検索で確認できない施設は除外してください
-- 各施設のGoogleマップリンクが正しく動作することを確認してください
-- 必ずGoogle検索ツールを使用して、実在する施設のみをリストアップしてください
+- ウェブ検索で確認できない施設は除外してください
+- 各施設の住所は、地図検索できる正式な表記にしてください
+- 検索で見つかった出典がある施設だけをリストアップしてください
     `;
 
     try {
-      // タイムアウト処理（100秒 - google_searchツール使用時は時間がかかるため）
+      // ウェブ検索つきの回答は時間がかかるため、120秒で打ち切る
       const timeoutPromise = new Promise<string>((_, reject) => {
-        setTimeout(() => reject(new Error('検索がタイムアウトしました。時間をおいて再度お試しください。')), 100000);
+        setTimeout(() => reject(new Error('検索がタイムアウトしました。時間をおいて再度お試しください。')), 120000);
       });
 
       const responsePromise = callGemini(prompt);
@@ -74,7 +74,7 @@ export default function StoreSearchView() {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '不明なエラー';
       console.error('店舗検索エラー:', error);
-      setResult(`❌ 検索エラーが発生しました。\n\n**エラー詳細**: ${errorMessage}\n\n**対処方法**:\n- ブラウザのコンソール（F12）で詳細なエラーを確認してください\n- 環境変数（VITE_GEMINI_API_KEY または VITE_AWS_API_GATEWAY_URL）が設定されているか確認してください`);
+      setResult(`❌ 検索エラーが発生しました。\n\n**エラー詳細**: ${errorMessage}\n\n**対処方法**:\n- 時間をおいて、もう一度検索してください\n- ブラウザのコンソール（F12）で詳細なエラーを確認してください`);
     } finally {
       setLoading(false);
     }

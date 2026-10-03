@@ -1,5 +1,5 @@
 import { authenticate } from './auth';
-import { handleGemini } from './gemini';
+import { handleDeepSeek } from './deepseek';
 import { reversePlace } from './nominatim';
 import { corsHeaders, isResponse, json } from './http';
 import { handlePhotos, readPhoto } from './photos';
@@ -9,7 +9,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === '/api/gemini') {
-      return handleGemini(request, env);
+      return handleDeepSeek(request, env);
     }
 
     if (request.method === 'OPTIONS') {

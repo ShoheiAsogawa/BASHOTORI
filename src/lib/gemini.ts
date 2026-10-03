@@ -171,7 +171,7 @@ export async function callGemini(prompt: string): Promise<string> {
     }
   }
 
-  // 本番: bashotori.com の Worker が提供する /api/gemini
+  // 本番: Worker の /api/gemini が DeepSeek のウェブ検索を呼ぶ
   try {
     const response = await fetch('/api/gemini', {
       method: 'POST',
