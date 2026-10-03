@@ -169,10 +169,9 @@ export function StoreFormModal({
     setUploading(true);
     try {
       const compressedFile = await compressImage(file);
-      const index = formData.photos.length + 1;
       // 新規登録の場合でも一時的なIDを使用して画像をアップロード
       const visitId = initialData?.id || formData.id;
-      const photo = await uploadImage(compressedFile, visitId, index);
+      const photo = await uploadImage(compressedFile, visitId);
 
       setFormData((prev) => ({
         ...prev,

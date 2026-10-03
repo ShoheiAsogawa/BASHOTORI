@@ -14,6 +14,8 @@ build
 .DS_Store
 .env
 .env.local
+.dev.vars
+.wrangler
 .env.development.local
 .env.test.local
 .env.production.local

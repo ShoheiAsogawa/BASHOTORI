@@ -1,0 +1,28 @@
+{
+  "name": "bashotori-api",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-03",
+  "account_id": "d2874089eebcda705bf220d39f117aec",
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
+  },
+  "vars": {
+    "SUPABASE_URL": "https://nfxzluqlprkelwociuaa.supabase.co"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bashotori",
+      "database_id": "cb310bdf-bd02-4d17-85bc-2209eb20ec92"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PHOTOS",
+      "bucket_name": "bashotori-photos"
+    }
+  ]
+}

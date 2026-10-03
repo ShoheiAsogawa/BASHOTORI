@@ -1,59 +1,19 @@
-import { supabase } from './supabase';
+import { apiFetch } from './supabase';
 import type { Photo } from '@/types';
 
-const BUCKET_NAME = 'store-visit-photos';
-
 // 画像をアップロード
-export async function uploadImage(file: File, visitId: string, index: number): Promise<Photo> {
-  if (!supabase) {
-    throw new Error('Supabase client is not initialized. Please check your .env file and restart the dev server.');
-  }
-
-  const fileExt = file.name.split('.').pop();
-  const fileName = `${visitId}-${index}.${fileExt}`;
-  const filePath = `${visitId}/${fileName}`;
-
-  // 画像をアップロード
-  const { data, error } = await supabase.storage
-    .from(BUCKET_NAME)
-    .upload(filePath, file, {
-      cacheControl: '3600',
-      upsert: false,
-    });
-
-  if (error) {
-    console.error('Error uploading image:', error);
-    throw error;
-  }
-
-  // 公開URLを取得
-  const { data: { publicUrl } } = supabase.storage
-    .from(BUCKET_NAME)
-    .getPublicUrl(filePath);
-
-  return {
-    id: data.path,
-    url: publicUrl,
-  };
+export async function uploadImage(file: File, visitId: string): Promise<Photo> {
+  const body = new FormData();
+  body.append('file', file);
+  body.append('visitId', visitId);
+  const response = await apiFetch('/api/photos', { method: 'POST', body });
+  return response.json() as Promise<Photo>;
 }
 
 // 画像を削除
 export async function deleteImage(photo: Photo): Promise<void> {
-  if (!supabase) {
-    throw new Error('Supabase client is not initialized');
-  }
-  if (!photo.id) {
-    return;
-  }
-
-  const { error } = await supabase.storage
-    .from(BUCKET_NAME)
-    .remove([photo.id]);
-
-  if (error) {
-    console.error('Error deleting image:', error);
-    throw error;
-  }
+  if (!photo.id || photo.url.includes('.supabase.co')) return;
+  await apiFetch(`/api/photos/${encodeURIComponent(photo.id)}`, { method: 'DELETE' });
 }
 
 // 画像を圧縮
