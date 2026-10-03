@@ -50,6 +50,22 @@ export async function getStoreVisits(): Promise<StoreVisit[]> {
   return data.map(transformStoreVisit);
 }
 
+let locationColumnsAvailable: boolean | null = null;
+
+function isMissingLocationColumn(error: { message?: string; code?: string }): boolean {
+  const message = error.message || '';
+  return (
+    error.code === 'PGRST204' ||
+    error.code === '42703' ||
+    /Could not find the '.+(latitude|longitude|address|poi_name|poi_licenses|poi_attributions)' column/.test(message)
+  );
+}
+
+function stringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
 // 店舗視察データの保存
 export async function saveStoreVisit(visit: Partial<StoreVisit>): Promise<StoreVisit> {
   if (!supabase) {
@@ -59,6 +75,7 @@ export async function saveStoreVisit(visit: Partial<StoreVisit>): Promise<StoreV
   // Supabaseクライアントを確実に取得
   const client = supabase;
   
+  const includeLocation = locationColumnsAvailable !== false;
   const visitData: Record<string, any> = {
     date: visit.date,
     facility_name: visit.facilityName,
@@ -88,40 +105,80 @@ export async function saveStoreVisit(visit: Partial<StoreVisit>): Promise<StoreV
     photo_url: visit.photoUrl,
   };
 
-  if (visit.id) {
-    // 更新
-    const result: any = await (client as any)
-      .from('store_visits')
-      .update(visitData)
-      .eq('id', visit.id)
-      .select()
-      .single();
-    
-    const { data, error } = result;
-
-    if (error) {
-      console.error('Error updating store visit:', error);
-      throw error;
-    }
-
-    return transformStoreVisit(data);
-  } else {
-    // 新規作成
-    const result: any = await (client as any)
-      .from('store_visits')
-      .insert(visitData)
-      .select()
-      .single();
-    
-    const { data, error } = result;
-
-    if (error) {
-      console.error('Error creating store visit:', error);
-      throw error;
-    }
-
-    return transformStoreVisit(data);
+  if (includeLocation) {
+    visitData.latitude = visit.latitude ?? null;
+    visitData.longitude = visit.longitude ?? null;
+    visitData.address = visit.address ?? null;
+    visitData.poi_name = visit.poiName ?? null;
+    visitData.poi_licenses = visit.poiLicenses ?? null;
+    visitData.poi_attributions = visit.poiAttributions ?? null;
   }
+
+  const write = async (row: Record<string, any>) => {
+    const query = visit.id
+      ? (client as any).from('store_visits').update(row).eq('id', visit.id)
+      : (client as any).from('store_visits').insert(row);
+    return query.select().single();
+  };
+
+  let result = await write(visitData);
+  if (result.error && includeLocation && isMissingLocationColumn(result.error)) {
+    locationColumnsAvailable = false;
+    const withoutLocation = { ...visitData };
+    delete withoutLocation.latitude;
+    delete withoutLocation.longitude;
+    delete withoutLocation.address;
+    delete withoutLocation.poi_name;
+    delete withoutLocation.poi_licenses;
+    delete withoutLocation.poi_attributions;
+    result = await write(withoutLocation);
+  } else if (!result.error && includeLocation) {
+    locationColumnsAvailable = true;
+  }
+
+  if (result.error) {
+    console.error('Error saving store visit:', result.error);
+    throw result.error;
+  }
+
+  return transformStoreVisit(result.data);
+}
+
+export async function updateStoreVisitLocation(
+  id: string,
+  place: {
+    latitude: number;
+    longitude: number;
+    address?: string;
+    name?: string;
+    licenses?: string[];
+    attributions?: string[];
+  },
+): Promise<boolean> {
+  if (!supabase || locationColumnsAvailable === false) return false;
+
+  const { error } = await (supabase as any)
+    .from('store_visits')
+    .update({
+      latitude: place.latitude,
+      longitude: place.longitude,
+      address: place.address || null,
+      poi_name: place.name || null,
+      poi_licenses: place.licenses || null,
+      poi_attributions: place.attributions || null,
+    })
+    .eq('id', id);
+
+  if (error && isMissingLocationColumn(error)) {
+    locationColumnsAvailable = false;
+    return false;
+  }
+  if (error) {
+    console.error('Error saving store location:', error);
+    return false;
+  }
+  locationColumnsAvailable = true;
+  return true;
 }
 
 // 店舗視察データの削除
@@ -170,6 +227,12 @@ function transformStoreVisit(row: any): StoreVisit {
     overallReview: row.overall_review,
     conditions: row.conditions,
     photoUrl: row.photo_url,
+    latitude: typeof row.latitude === 'number' ? row.latitude : null,
+    longitude: typeof row.longitude === 'number' ? row.longitude : null,
+    address: row.address || undefined,
+    poiName: row.poi_name || undefined,
+    poiLicenses: stringList(row.poi_licenses),
+    poiAttributions: stringList(row.poi_attributions),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

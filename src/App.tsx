@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import CalendarView from './pages/CalendarView';
 import DashboardView from './pages/DashboardView';
 import StoreSearchView from './pages/StoreSearchView';
 import LoginView from './pages/LoginView';
+
+const MapView = lazy(() => import('./pages/MapView'));
 import { supabase } from './lib/supabase';
 import { Icon } from './components/Icon';
 
@@ -101,6 +103,14 @@ function App() {
     <Routes>
       <Route path="/" element={<CalendarView />} />
       <Route path="/dashboard" element={<DashboardView />} />
+      <Route
+        path="/map"
+        element={
+          <Suspense fallback={<div className="p-10 text-center text-slate-500">地図を読み込み中...</div>}>
+            <MapView />
+          </Suspense>
+        }
+      />
       <Route path="/search" element={<StoreSearchView />} />
               </Routes>
             </>
