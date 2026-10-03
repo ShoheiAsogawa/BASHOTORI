@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { Icon } from '../components/Icon';
+import { MapFilterBar, sortGroups } from '../components/MapFilterBar';
 import { StoreMap, rankColor, type MapPoint } from '../components/StoreMap';
 import { getStoreVisits } from '../lib/supabase';
-import { JUDGMENT, RANKS } from '../lib/constants';
+import { JUDGMENT } from '../lib/constants';
+import { EMPTY_VISIT_FILTER, groupMatches, type VisitFilterState } from '../lib/visitFilters';
 import { locationKey, type PoiPlace } from '../lib/openpoi';
 import { formatDateJP } from '../lib/utils';
 import type { StoreVisit } from '../types';
@@ -19,9 +21,7 @@ export default function MapView() {
   const [visits, setVisits] = useState<StoreVisit[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterRank, setFilterRank] = useState('ALL');
-  const [filterJudgment, setFilterJudgment] = useState('ALL');
+  const [filters, setFilters] = useState<VisitFilterState>(EMPTY_VISIT_FILTER);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -37,19 +37,17 @@ export default function MapView() {
   const groups = useMemo(() => groupVisits(visits), [visits]);
 
   const rows = useMemo(() => {
-    return groups
-      .map((group) => ({ group, place: storedPlace(group.visits) }))
-      .filter(({ group }) => {
-        const latest = group.latest;
-        const matchesSearch =
-          !searchTerm ||
-          latest.facilityName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (latest.prefecture || '').includes(searchTerm);
-        const matchesRank = filterRank === 'ALL' || latest.rank === filterRank;
-        const matchesJudgment = filterJudgment === 'ALL' || latest.judgment === filterJudgment;
-        return matchesSearch && matchesRank && matchesJudgment;
-      });
-  }, [groups, searchTerm, filterRank, filterJudgment]);
+    return sortGroups(
+      groups.filter((group) => groupMatches(group, filters)),
+      filters.sort,
+    ).map((group) => ({ group, place: storedPlace(group.visits) }));
+  }, [groups, filters]);
+
+  useEffect(() => {
+    if (selectedId && !rows.some(({ group }) => group.key === selectedId)) {
+      setSelectedId(null);
+    }
+  }, [rows, selectedId]);
 
   const points: MapPoint[] = rows.flatMap(({ group, place }) => {
     if (!place) return [];
@@ -84,9 +82,6 @@ export default function MapView() {
                 保存済みの位置だけを表示します。ピンの色は最新のランクです。
               </p>
             </div>
-            <div className="text-sm font-bold text-slate-600">
-              {points.length} 件を表示
-            </div>
           </div>
 
           {error && (
@@ -95,35 +90,12 @@ export default function MapView() {
             </div>
           )}
 
-          <div className="mb-4 flex flex-col gap-2 sm:flex-row">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="施設名・都道府県で絞り込み"
-              className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-500"
-            />
-            <select
-              value={filterRank}
-              onChange={(event) => setFilterRank(event.target.value)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600"
-            >
-              <option value="ALL">全ランク</option>
-              {Object.keys(RANKS).map((rank) => (
-                <option key={rank} value={rank}>{rank}</option>
-              ))}
-            </select>
-            <select
-              value={filterJudgment}
-              onChange={(event) => setFilterJudgment(event.target.value)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600"
-            >
-              <option value="ALL">全判定</option>
-              {Object.entries(JUDGMENT).map(([key, info]) => (
-                <option key={key} value={key}>{info.label}</option>
-              ))}
-            </select>
-          </div>
+          <MapFilterBar
+            state={filters}
+            groups={groups}
+            resultCount={rows.length}
+            onChange={setFilters}
+          />
 
           {loading ? (
             <div className="py-20 text-center text-slate-500">読み込み中...</div>
@@ -131,7 +103,18 @@ export default function MapView() {
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
               <div className="max-h-[420px] overflow-y-auto rounded-2xl border border-slate-200 bg-white lg:max-h-[calc(100vh-220px)]">
                 {rows.length === 0 ? (
-                  <p className="p-6 text-sm text-slate-400">表示できる視察記録がありません。</p>
+                  <div className="p-6 text-sm text-slate-400">
+                    <p>{groups.length === 0 ? '表示できる視察記録がありません。' : '条件に合う店舗がありません。'}</p>
+                    {groups.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setFilters(EMPTY_VISIT_FILTER)}
+                        className="mt-3 font-bold text-orange-600"
+                      >
+                        条件をクリア
+                      </button>
+                    )}
+                  </div>
                 ) : (
                   <ul>
                     {rows.map(({ group, place }) => {

@@ -105,6 +105,11 @@ export function StoreMap({
     };
   }, []);
 
+  const pointsKey = points.map((point) => point.id).join('\n');
+  useEffect(() => {
+    userAdjustedRef.current = false;
+  }, [pointsKey]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
