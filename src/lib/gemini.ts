@@ -171,7 +171,24 @@ export async function callGemini(prompt: string): Promise<string> {
     }
   }
 
-  // モックレスポンス（APIキーも設定されていない場合）
+  // 本番: Worker の /api/gemini が DeepSeek のウェブ検索を呼ぶ
+  try {
+    const response = await fetch('/api/gemini', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+    const data = await response.json().catch(() => ({} as { error?: string; result?: string; text?: string }));
+    if (!response.ok) {
+      throw new Error(data.error || `API request failed: ${response.statusText}`);
+    }
+    return data.result || data.text || 'エラー: レスポンス形式が不正です';
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+    console.error('Error calling /api/gemini:', error);
+  }
+
+  // モックレスポンス（APIもWorkerも使えない開発時のみ）
   console.warn('No API key or Gateway URL set, returning mock response');
   return mockGeminiResponse(prompt);
 }

@@ -95,3 +95,125 @@ input[type="date"] {
   z-index: 0;
 }
 
+.store-card-popup .leaflet-popup-content-wrapper {
+  padding: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.18);
+}
+
+.store-card-popup .leaflet-popup-content {
+  margin: 0;
+  width: 260px !important;
+  line-height: 1.4;
+}
+
+.store-card-popup .leaflet-popup-close-button {
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #334155;
+  font-size: 18px;
+  line-height: 26px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.18);
+}
+
+.store-card-photos {
+  position: relative;
+  height: 148px;
+  background: #e7e5e4;
+}
+
+.store-card-photos img {
+  display: block;
+  width: 100%;
+  height: 148px;
+  object-fit: cover;
+}
+
+.store-card-photo-count {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.store-card-photo-nav {
+  position: absolute;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  margin-top: -14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #0f172a;
+  font-size: 20px;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.18);
+}
+
+.store-card-photo-nav-left { left: 8px; }
+.store-card-photo-nav-right { right: 8px; }
+
+.store-card-body {
+  padding: 12px 12px 12px;
+}
+
+.store-card-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.store-card-meta {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.store-card-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 999px;
+  flex: none;
+}
+
+.store-card-count,
+.store-card-address {
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.store-card-nav {
+  display: block;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+  text-decoration: none;
+}
+
+.store-card-nav:hover {
+  background: #ffedd5;
+}
+

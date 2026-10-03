@@ -4,14 +4,17 @@ import { RANKS, JUDGMENT, ENVIRONMENTS, IMITATIONS, REGISTER_COUNTS, COMPETITOR_
 import { PREFECTURES, type Prefecture } from '../types';
 import { formatDate, generateId } from '../lib/utils';
 import { uploadImage, deleteImage, compressImage } from '../lib/storage';
-import { suggestPlaces, writePoiCache, type PoiPlace } from '../lib/openpoi';
+import { locateFacility, suggestPlaces, writePoiCache, type PoiPlace } from '../lib/openpoi';
+import { getCurrentLocation } from '../lib/location';
+import { reverseGeocodePin } from '../lib/supabase';
+import { StoreMap, type DraftPin, type MapFocus } from './StoreMap';
 import type { StoreVisit, Photo, CustomerSegment } from '../types';
 
 interface StoreFormModalProps {
   initialData?: StoreVisit | null;
   selectedDate?: Date | null;
   onClose: () => void;
-  onSave: (data: Partial<StoreVisit>) => Promise<StoreVisit>;
+  onSave: (data: Partial<StoreVisit> & { skipGeocode?: boolean }) => Promise<StoreVisit>;
   loading: boolean;
   readOnly?: boolean; // 読み取り専用モード
   onEdit?: () => void; // 編集モードに切り替えるコールバック
@@ -86,24 +89,19 @@ export function StoreFormModal({
   });
   const [placeSuggestions, setPlaceSuggestions] = useState<PoiPlace[]>([]);
   const [nameFocused, setNameFocused] = useState(false);
+  const [locating, setLocating] = useState<'gps' | 'name' | null>(null);
+  const [focus, setFocus] = useState<MapFocus | null>(() => (
+    initialData?.latitude != null && initialData.longitude != null
+      ? { latitude: initialData.latitude, longitude: initialData.longitude, zoom: 16, token: 1 }
+      : null
+  ));
 
   const [uploading, setUploading] = useState(false);
   const [viewingImage, setViewingImage] = useState<Photo | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => {
-      const next = { ...prev, [name]: value };
-      if (name === 'facilityName') {
-        next.latitude = null;
-        next.longitude = null;
-        next.address = '';
-        next.poiName = '';
-        next.poiLicenses = [];
-        next.poiAttributions = [];
-      }
-      return next;
-    });
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   useEffect(() => {
@@ -169,10 +167,9 @@ export function StoreFormModal({
     setUploading(true);
     try {
       const compressedFile = await compressImage(file);
-      const index = formData.photos.length + 1;
       // 新規登録の場合でも一時的なIDを使用して画像をアップロード
       const visitId = initialData?.id || formData.id;
-      const photo = await uploadImage(compressedFile, visitId, index);
+      const photo = await uploadImage(compressedFile, visitId);
 
       setFormData((prev) => ({
         ...prev,
@@ -214,7 +211,8 @@ export function StoreFormModal({
         ...formData,
         photoUrl: JSON.stringify(formData.photos),
         prefecture: (formData.prefecture || undefined) as Prefecture | undefined,
-      } as Partial<StoreVisit>;
+        skipGeocode: formData.latitude != null && formData.longitude != null,
+      } as Partial<StoreVisit> & { skipGeocode?: boolean };
       delete (submitData as any).photos;
       
       // 新規登録の場合はidを削除（データベースが自動生成するため）
@@ -385,11 +383,6 @@ export function StoreFormModal({
                     ))}
                   </ul>
                 )}
-                {formData.latitude != null && formData.longitude != null && (
-                  <p className="mt-1 text-xs text-emerald-700">
-                    地図上の位置を設定済み{formData.address ? `（${formData.address}）` : ''}
-                  </p>
-                )}
               </div>
               <div className="mb-4">
                 <label className="block text-xs font-bold text-slate-600 mb-1.5">都道府県</label>
@@ -408,6 +401,89 @@ export function StoreFormModal({
                   ))}
                 </select>
               </div>
+              <LocationFields
+                readOnly={readOnly}
+                formData={formData}
+                locating={locating}
+                focus={focus}
+                onChange={handleChange}
+                onUseCurrentLocation={() => {
+                  setLocating('gps');
+                  getCurrentLocation()
+                    .then(async (here) => {
+                      const place = await reverseGeocodePin(here.latitude, here.longitude);
+                      setFormData((prev) => ({
+                        ...prev,
+                        latitude: place.latitude,
+                        longitude: place.longitude,
+                        address: place.address,
+                        prefecture: prev.prefecture || place.prefecture,
+                        poiName: '',
+                        poiLicenses: [],
+                        poiAttributions: [],
+                      }));
+                      setFocus({ latitude: place.latitude, longitude: place.longitude, zoom: 16, token: Date.now() });
+                    })
+                    .catch((error: unknown) => {
+                      alert(error instanceof Error ? error.message : '現在地を取得できませんでした');
+                    })
+                    .finally(() => setLocating(null));
+                }}
+                onSearchName={() => {
+                  const query = formData.facilityName.trim();
+                  if (query.length < 2) {
+                    alert('先に施設名を入力してください');
+                    return;
+                  }
+                  setLocating('name');
+                  locateFacility(query, formData.prefecture || undefined)
+                    .then((place) => {
+                      if (!place) {
+                        alert('店舗名から位置を特定できませんでした。現在地か、地図をタップして指定できます。');
+                        return;
+                      }
+                      writePoiCache(place.name, place.prefecture || formData.prefecture, place);
+                      setFormData((prev) => ({
+                        ...prev,
+                        prefecture: prev.prefecture || place.prefecture,
+                        address: place.address,
+                        latitude: place.latitude,
+                        longitude: place.longitude,
+                        poiName: place.name,
+                        poiLicenses: place.licenses,
+                        poiAttributions: place.attributions,
+                      }));
+                      setFocus({ latitude: place.latitude, longitude: place.longitude, zoom: 16, token: Date.now() });
+                    })
+                    .catch(() => {
+                      alert('店舗名から位置を特定できませんでした。現在地か、地図をタップして指定できます。');
+                    })
+                    .finally(() => setLocating(null));
+                }}
+                onPick={(latitude, longitude) => {
+                  setFormData((prev) => ({
+                    ...prev,
+                    latitude,
+                    longitude,
+                    poiName: '',
+                    poiLicenses: [],
+                    poiAttributions: [],
+                  }));
+                  reverseGeocodePin(latitude, longitude)
+                    .then((place) => {
+                      setFormData((prev) => {
+                        if (prev.latitude == null || prev.longitude == null) return prev;
+                        if (Math.abs(prev.latitude - latitude) > 0.0003 || Math.abs(prev.longitude - longitude) > 0.0003) return prev;
+                        return {
+                          ...prev,
+                          address: place.address || prev.address,
+                          prefecture: prev.prefecture || place.prefecture,
+                        };
+                      });
+                    })
+                    .catch(() => undefined);
+                }}
+              />
 
               {/* 現場写真アップロード */}
               <div className="mt-4 pt-4 border-t border-slate-100">
@@ -899,6 +975,78 @@ export function StoreFormModal({
         </div>
       </div>
     </>
+  );
+}
+
+function LocationFields({
+  readOnly,
+  formData,
+  locating,
+  focus,
+  onChange,
+  onUseCurrentLocation,
+  onSearchName,
+  onPick,
+}: {
+  readOnly: boolean;
+  formData: { latitude: number | null; longitude: number | null; address: string };
+  locating: 'gps' | 'name' | null;
+  focus: MapFocus | null;
+  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onUseCurrentLocation: () => void;
+  onSearchName: () => void;
+  onPick: (latitude: number, longitude: number) => void;
+}) {
+  const draftPin: DraftPin | null = formData.latitude != null && formData.longitude != null
+    ? { latitude: formData.latitude, longitude: formData.longitude, label: 'この視察の位置' }
+    : null;
+
+  return (
+    <div className="mb-4">
+      <label className="block text-xs font-bold text-slate-600 mb-1.5">位置</label>
+      {!readOnly && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onUseCurrentLocation}
+            disabled={locating !== null}
+            className="rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+          >
+            {locating === 'gps' ? '現在地を取得中...' : '現在地を入れる'}
+          </button>
+          <button
+            type="button"
+            onClick={onSearchName}
+            disabled={locating !== null}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:opacity-50"
+          >
+            {locating === 'name' ? '店舗名から検索中...' : '店舗名から探す'}
+          </button>
+        </div>
+      )}
+      <input
+        type="text"
+        name="address"
+        value={formData.address}
+        onChange={onChange}
+        disabled={readOnly}
+        placeholder="住所"
+        className="mb-2 w-full rounded-lg border border-slate-300 bg-slate-50 p-2.5 text-sm outline-none focus:ring-2 focus:ring-orange-500 disabled:cursor-not-allowed disabled:opacity-60"
+      />
+      <StoreMap
+        points={[]}
+        draftPin={draftPin}
+        onPick={readOnly ? undefined : onPick}
+        focus={focus}
+        autoFit={false}
+        className="h-56"
+      />
+      <p className="mt-1 text-xs text-slate-400">
+        {readOnly
+          ? (draftPin ? 'この視察の位置です。' : '位置は未登録です。')
+          : '視察中は「現在地を入れる」でその場の位置を記録できます。地図をタップするか、ピンをドラッグして直せます。'}
+      </p>
+    </div>
   );
 }
 

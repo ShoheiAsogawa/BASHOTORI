@@ -1,84 +1,122 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Navbar } from '../components/Navbar';
 import { Icon } from '../components/Icon';
 import { callGemini } from '../lib/gemini';
+import { getCurrentLocation } from '../lib/location';
+import {
+  buildStoreSearchPrompt,
+  orderSearchResult,
+  searchArea,
+  type Origin,
+} from '../lib/nearbySearch';
+import { reverseGeocodePin } from '../lib/supabase';
 import { marked } from 'marked';
-import { checkRateLimit, incrementRequestCount } from '../lib/rateLimit';
 
 export default function StoreSearchView() {
   const [location, setLocation] = useState('');
+  const [origin, setOrigin] = useState<Origin | null>(null);
+  const [locating, setLocating] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [sorting, setSorting] = useState(false);
   const [result, setResult] = useState('');
+  const [hint, setHint] = useState('');
+  const requestRef = useRef(0);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!location.trim()) return;
+  const busy = locating || loading || sorting;
 
-    // リクエスト制限チェック
-    const rateLimit = checkRateLimit();
-    if (!rateLimit.allowed) {
-      setResult(`❌ **リクエスト制限に達しました**\n\n本日の検索回数の上限（${rateLimit.limit}回）に達しました。\n明日（${new Date(new Date().setDate(new Date().getDate() + 1)).toLocaleDateString('ja-JP')}）にリセットされます。\n\n無料枠を超えないよう、1日あたり${rateLimit.limit}回までに制限しています。`);
-      return;
-    }
-
-    setLoading(true);
-    setResult('');
-
-    // リクエストカウントを増やす
-    incrementRequestCount();
-
-    const prompt = `
-あなたは日本の商業施設リサーチャーです。
-**重要**: 必ずGoogle検索ツール（google_search）を使用して、実在する店舗情報のみを取得してください。
-虚偽の情報や推測による情報は一切含めないでください。
-
-以下の地域の、催事イベント（買取イベント）の開催に適した集客力のある商業施設を5〜10件リストアップしてください。
-
-ターゲット地域: ${location}
-
-**検索要件**:
-1. Google検索ツールを使用して、実在する商業施設を検索してください
-2. 各施設について、以下の情報を必ず確認してください：
-   - 施設名（正確な名称）
-   - 正確な住所
-   - ジャンル・業種
-   - GoogleマップのURL（実在する施設のみ）
-
-**出力形式**（マークダウン）:
-各施設について、以下の形式で出力してください：
-
-### 施設名（実在する施設のみ）
-
-- **ジャンル**: 
-- **住所**: 
-- **Googleマップ**: [地図を見る](https://www.google.com/maps/search/?api=1&query=施設名+住所)
-- **特徴**: (集客力、客層など、実在する情報のみ)
-
-**注意事項**:
-- 実在しない施設は絶対に含めないでください
-- 推測や創作の情報は含めないでください
-- Google検索で確認できない施設は除外してください
-- 各施設のGoogleマップリンクが正しく動作することを確認してください
-- 必ずGoogle検索ツールを使用して、実在する施設のみをリストアップしてください
-    `;
-
+  const readOrigin = async (force: boolean): Promise<{ here: Origin | null; error: string }> => {
+    if (origin && !force) return { here: origin, error: '' };
+    setLocating(true);
     try {
-      // タイムアウト処理（100秒 - google_searchツール使用時は時間がかかるため）
-      const timeoutPromise = new Promise<string>((_, reject) => {
-        setTimeout(() => reject(new Error('検索がタイムアウトしました。時間をおいて再度お試しください。')), 100000);
-      });
-
-      const responsePromise = callGemini(prompt);
-      const response = await Promise.race([responsePromise, timeoutPromise]);
-      setResult(response);
+      const position = await getCurrentLocation();
+      let label = '現在地付近';
+      try {
+        const place = await reverseGeocodePin(position.latitude, position.longitude);
+        label = searchArea(place.address, place.prefecture) || label;
+      } catch (error) {
+        console.warn('現在地の住所を取得できませんでした', error);
+      }
+      const next = { latitude: position.latitude, longitude: position.longitude, label };
+      setOrigin(next);
+      return { here: next, error: '' };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '不明なエラー';
-      console.error('店舗検索エラー:', error);
-      setResult(`❌ 検索エラーが発生しました。\n\n**エラー詳細**: ${errorMessage}\n\n**対処方法**:\n- ブラウザのコンソール（F12）で詳細なエラーを確認してください\n- 環境変数（VITE_GEMINI_API_KEY または VITE_AWS_API_GATEWAY_URL）が設定されているか確認してください`);
+      const message = error instanceof Error ? error.message : '現在地を取得できませんでした';
+      return { here: null, error: message };
     } finally {
-      setLoading(false);
+      setLocating(false);
     }
   };
+
+  const runSearch = async (area: string, here: Origin | null, unsortedHint = '現在地が取れないため、距離順には並べていません') => {
+    const requestId = ++requestRef.current;
+    setHint('');
+    setLoading(true);
+    setResult('');
+    const prompt = buildStoreSearchPrompt(area, here);
+
+    try {
+      const timeoutPromise = new Promise<string>((_, reject) => {
+        setTimeout(() => reject(new Error('検索がタイムアウトしました。時間をおいて再度お試しください。')), 120000);
+      });
+      const response = await Promise.race([callGemini(prompt), timeoutPromise]);
+      if (requestId !== requestRef.current) return;
+
+      if (!here) {
+        setResult(response);
+        setHint(unsortedHint);
+        return;
+      }
+
+      setLoading(false);
+      setSorting(true);
+      const ordered = await orderSearchResult(response, here);
+      if (requestId !== requestRef.current) return;
+      setResult(ordered.markdown);
+      if (!ordered.sorted) {
+        setHint('住所から距離を計算できなかったので、検索順のままです');
+      }
+    } catch (error) {
+      if (requestId !== requestRef.current) return;
+      const errorMessage = error instanceof Error ? error.message : '不明なエラー';
+      console.error('店舗検索エラー:', error);
+      setResult(`❌ 検索エラーが発生しました。\n\n**エラー詳細**: ${errorMessage}\n\n**対処方法**:\n- 時間をおいて、もう一度検索してください\n- ブラウザのコンソール（F12）で詳細なエラーを確認してください`);
+    } finally {
+      if (requestId === requestRef.current) {
+        setLoading(false);
+        setSorting(false);
+      }
+    }
+  };
+
+  const handleSearch = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const { here, error } = await readOrigin(false);
+    const area = location.trim() || (here && here.label !== '現在地付近' ? here.label : '');
+    if (!area) {
+      setHint(error || '地域名を入力するか、現在地の利用を許可してください');
+      return;
+    }
+    if (!location.trim() && here) setLocation(here.label);
+    await runSearch(area, here, error || undefined);
+  };
+
+  const handleNearMe = async () => {
+    const { here, error } = await readOrigin(true);
+    if (!here) {
+      setHint(error || '現在地を取得できませんでした');
+      return;
+    }
+    if (here.label !== '現在地付近') setLocation(here.label);
+    await runSearch(here.label, here);
+  };
+
+  const status = locating
+    ? '現在地を取得しています'
+    : loading
+      ? '周辺の施設を検索しています'
+      : sorting
+        ? '現在地から近い順に並べています'
+        : '';
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -93,41 +131,60 @@ export default function StoreSearchView() {
               </span>
             </h2>
             <p className="text-sm text-slate-500 mb-6">
-              地域名を入力すると、AIがGoogle検索を行い、催事に適した商業施設をリストアップします。
+              地域名で探すか、現在地から探すと、いまいる場所から近い順に催事向きの商業施設を出します。
             </p>
 
-            <form onSubmit={handleSearch} className="flex gap-2">
+            <form onSubmit={handleSearch} className="flex flex-col gap-2">
               <input
                 type="text"
                 value={location}
-                onChange={(e) => setLocation(e.target.value)}
+                onChange={(event) => {
+                  setLocation(event.target.value);
+                  if (event.target.value.trim()) setHint('');
+                }}
                 placeholder="例: 大阪府岸和田市、神奈川県横浜市..."
-                className="flex-1 p-3 bg-slate-50 border border-slate-300 rounded-xl text-base outline-none focus:ring-2 focus:ring-orange-500 transition"
+                className="min-w-0 w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-base outline-none focus:ring-2 focus:ring-orange-500 transition"
               />
-              <button
-                type="submit"
-                disabled={loading || !location || !checkRateLimit().allowed}
-                className="bg-slate-900 text-white px-4 py-3 rounded-xl font-bold hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 shadow-lg w-32 justify-center whitespace-nowrap text-sm"
-              >
-                {loading ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white/30 border-l-white rounded-full animate-spin" />
-                    <span className="text-xs">検索中</span>
-                  </div>
-                ) : (
-                  <>
-                    <Icon name="Search" size={18} /> 検索
-                  </>
-                )}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleNearMe()}
+                  disabled={busy}
+                  className="flex-1 bg-orange-500 text-white px-3 py-3 rounded-xl font-bold hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2 shadow-sm text-sm"
+                >
+                  <Icon name="MapPin" size={18} />
+                  {locating ? '取得中' : '現在地から検索'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="flex-1 bg-slate-900 text-white px-3 py-3 rounded-xl font-bold hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2 shadow-sm text-sm"
+                >
+                  {loading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-l-white rounded-full animate-spin" />
+                      検索中
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="Search" size={18} /> 検索
+                    </>
+                  )}
+                </button>
+              </div>
             </form>
+            {origin && !status && (
+              <p className="mt-3 text-xs font-bold text-slate-500">近い順の基準: {origin.label}</p>
+            )}
+            {status && <p className="mt-3 text-sm font-bold text-orange-700">{status}</p>}
+            {hint && <p className="mt-2 text-sm font-bold text-orange-700">{hint}</p>}
           </div>
 
           {result && (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 animate-fade-in">
               <div
                 className="prose prose-slate max-w-none prose-strong:text-orange-700 prose-headings:text-slate-800 prose-a:text-orange-600 prose-a:font-bold prose-a:no-underline hover:prose-a:underline"
-                dangerouslySetInnerHTML={{ 
+                dangerouslySetInnerHTML={{
                   __html: (() => {
                     const renderer = new marked.Renderer();
                     renderer.link = (href: string, title: string | null | undefined, text: string) => {
@@ -144,10 +201,10 @@ export default function StoreSearchView() {
             </div>
           )}
 
-          {!result && !loading && (
+          {!result && !busy && (
             <div className="text-center py-20 text-slate-400">
               <Icon name="Compass" size={48} className="mx-auto mb-4 opacity-20" />
-              <p>地域を入力して検索を開始してください</p>
+              <p>地域を入力するか、現在地から検索してください</p>
             </div>
           )}
         </div>
@@ -155,4 +212,3 @@ export default function StoreSearchView() {
     </div>
   );
 }
-

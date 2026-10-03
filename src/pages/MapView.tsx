@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { Icon } from '../components/Icon';
+import { MapFilterBar, sortGroups } from '../components/MapFilterBar';
 import { StoreMap, rankColor, type MapPoint } from '../components/StoreMap';
-import { getStoreVisits, updateStoreVisitLocation } from '../lib/supabase';
-import { isAdmin } from '../lib/auth';
-import { JUDGMENT, RANKS } from '../lib/constants';
-import { locateFacility, locationKey, type PoiPlace } from '../lib/openpoi';
+import { getStoreVisits } from '../lib/supabase';
+import { JUDGMENT } from '../lib/constants';
+import { EMPTY_VISIT_FILTER, groupMatches, type VisitFilterState } from '../lib/visitFilters';
+import { locationKey, type PoiPlace } from '../lib/openpoi';
 import { formatDateJP } from '../lib/utils';
 import type { StoreVisit } from '../types';
 
@@ -18,12 +20,8 @@ interface FacilityGroup {
 export default function MapView() {
   const [visits, setVisits] = useState<StoreVisit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [resolved, setResolved] = useState<Record<string, PoiPlace | null>>({});
-  const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterRank, setFilterRank] = useState('ALL');
-  const [filterJudgment, setFilterJudgment] = useState('ALL');
+  const [filters, setFilters] = useState<VisitFilterState>(EMPTY_VISIT_FILTER);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -37,72 +35,19 @@ export default function MapView() {
   }, []);
 
   const groups = useMemo(() => groupVisits(visits), [visits]);
-  const resolvedRef = useRef<Record<string, PoiPlace | null>>({});
-
-  useEffect(() => {
-    const missing = groups.filter((group) => !storedPlace(group.visits) && resolvedRef.current[group.key] === undefined);
-    if (missing.length === 0) return;
-
-    let cancelled = false;
-    setProgress({ done: 0, total: missing.length });
-
-    const locate = async () => {
-      const admin = await isAdmin();
-      for (let index = 0; index < missing.length; index += 1) {
-        if (cancelled) return;
-        const group = missing[index];
-        let place: PoiPlace | null = null;
-        try {
-          place = await locateFacility(group.latest.facilityName, group.latest.prefecture);
-        } catch (locateError) {
-          console.error(locateError);
-          if (!cancelled) setError('一部の店舗は OpenPOI API で位置を取得できませんでした。');
-        }
-        if (cancelled) return;
-        if (place && admin) {
-          for (const visit of group.visits) {
-            if (storedPlace([visit])) continue;
-            const saved = await updateStoreVisitLocation(visit.id, {
-              latitude: place.latitude,
-              longitude: place.longitude,
-              address: place.address,
-              name: place.name,
-              licenses: place.licenses,
-              attributions: place.attributions,
-            });
-            if (!saved) break;
-          }
-        }
-        resolvedRef.current = { ...resolvedRef.current, [group.key]: place };
-        setResolved(resolvedRef.current);
-        setProgress({ done: index + 1, total: missing.length });
-      }
-    };
-
-    locate();
-    return () => {
-      cancelled = true;
-    };
-  }, [groups]);
 
   const rows = useMemo(() => {
-    return groups
-      .map((group) => {
-        const stored = storedPlace(group.visits);
-        const place = stored || (group.key in resolved ? resolved[group.key] : undefined);
-        return { group, place };
-      })
-      .filter(({ group }) => {
-        const latest = group.latest;
-        const matchesSearch =
-          !searchTerm ||
-          latest.facilityName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (latest.prefecture || '').includes(searchTerm);
-        const matchesRank = filterRank === 'ALL' || latest.rank === filterRank;
-        const matchesJudgment = filterJudgment === 'ALL' || latest.judgment === filterJudgment;
-        return matchesSearch && matchesRank && matchesJudgment;
-      });
-  }, [groups, resolved, searchTerm, filterRank, filterJudgment]);
+    return sortGroups(
+      groups.filter((group) => groupMatches(group, filters)),
+      filters.sort,
+    ).map((group) => ({ group, place: storedPlace(group.visits) }));
+  }, [groups, filters]);
+
+  useEffect(() => {
+    if (selectedId && !rows.some(({ group }) => group.key === selectedId)) {
+      setSelectedId(null);
+    }
+  }, [rows, selectedId]);
 
   const points: MapPoint[] = rows.flatMap(({ group, place }) => {
     if (!place) return [];
@@ -117,6 +62,7 @@ export default function MapView() {
       dateLabel: formatDateJP(group.latest.date),
       visitCount: group.visits.length,
       address: place.address || group.latest.address,
+      photos: photoUrls(group.visits),
     }];
   });
 
@@ -133,14 +79,8 @@ export default function MapView() {
                 <Icon name="MapPin" className="text-orange-500" /> 視察マップ
               </h2>
               <p className="text-sm text-slate-500 mt-1">
-                記録済みの施設を OpenPOI API で位置検索し、地図に表示します。ピンの色は最新のランクです。
+                保存済みの位置だけを表示します。ピンの色は最新のランクです。
               </p>
-            </div>
-            <div className="text-sm font-bold text-slate-600">
-              {points.length} 件を表示
-              {progress.total > 0 && progress.done < progress.total && (
-                <span className="ml-2 text-orange-600">位置を検索中 {progress.done}/{progress.total}</span>
-              )}
             </div>
           </div>
 
@@ -150,35 +90,12 @@ export default function MapView() {
             </div>
           )}
 
-          <div className="mb-4 flex flex-col gap-2 sm:flex-row">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="施設名・都道府県で絞り込み"
-              className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-500"
-            />
-            <select
-              value={filterRank}
-              onChange={(event) => setFilterRank(event.target.value)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600"
-            >
-              <option value="ALL">全ランク</option>
-              {Object.keys(RANKS).map((rank) => (
-                <option key={rank} value={rank}>{rank}</option>
-              ))}
-            </select>
-            <select
-              value={filterJudgment}
-              onChange={(event) => setFilterJudgment(event.target.value)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600"
-            >
-              <option value="ALL">全判定</option>
-              {Object.entries(JUDGMENT).map(([key, info]) => (
-                <option key={key} value={key}>{info.label}</option>
-              ))}
-            </select>
-          </div>
+          <MapFilterBar
+            state={filters}
+            groups={groups}
+            resultCount={rows.length}
+            onChange={setFilters}
+          />
 
           {loading ? (
             <div className="py-20 text-center text-slate-500">読み込み中...</div>
@@ -186,7 +103,18 @@ export default function MapView() {
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
               <div className="max-h-[420px] overflow-y-auto rounded-2xl border border-slate-200 bg-white lg:max-h-[calc(100vh-220px)]">
                 {rows.length === 0 ? (
-                  <p className="p-6 text-sm text-slate-400">表示できる視察記録がありません。</p>
+                  <div className="p-6 text-sm text-slate-400">
+                    <p>{groups.length === 0 ? '表示できる視察記録がありません。' : '条件に合う店舗がありません。'}</p>
+                    {groups.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setFilters(EMPTY_VISIT_FILTER)}
+                        className="mt-3 font-bold text-orange-600"
+                      >
+                        条件をクリア
+                      </button>
+                    )}
+                  </div>
                 ) : (
                   <ul>
                     {rows.map(({ group, place }) => {
@@ -213,7 +141,7 @@ export default function MapView() {
                                   {group.visits.length > 1 ? ` · ${group.visits.length}件` : ''}
                                 </span>
                                 <span className="block text-xs text-slate-400">
-                                  {place ? (place.address || place.name) : place === null ? '位置を特定できませんでした' : '位置を検索中'}
+                                  {place ? (place.address || place.name) : '位置未登録'}
                                 </span>
                               </span>
                             </div>
@@ -230,21 +158,13 @@ export default function MapView() {
 
           {!loading && unresolved.length > 0 && (
             <p className="mt-3 text-xs text-slate-500">
-              {unresolved.length} 件は OpenPOI API で同名の施設が見つからず、地図に載っていません。登録時に候補から選ぶと位置が付きます。
+              {unresolved.length} 件は地図に載っていません。
+              <Link to="/places" className="ml-1 font-bold text-orange-600 underline">場所の登録</Link>
+              から住所とピンを後から追加できます。
             </p>
           )}
 
           <p className="mt-4 text-xs text-slate-400">
-            施設検索:{' '}
-            <a
-              href="https://openpoiapi.com/attribution.html"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-slate-600"
-            >
-              OpenPOI API
-            </a>
-            {' / '}
             地図:{' '}
             <a
               href="https://maps.gsi.go.jp/development/ichiran.html"
@@ -252,7 +172,7 @@ export default function MapView() {
               rel="noopener noreferrer"
               className="underline hover:text-slate-600"
             >
-              国土地理院
+              国土地理院（淡色地図）
             </a>
           </p>
         </div>
@@ -273,6 +193,32 @@ function groupVisits(visits: StoreVisit[]): FacilityGroup[] {
     const visitsInGroup = [...list].sort((a, b) => b.date.localeCompare(a.date));
     return { key, visits: visitsInGroup, latest: visitsInGroup[0] };
   });
+}
+
+function photoUrls(visits: StoreVisit[]): string[] {
+  const urls: string[] = [];
+  for (const visit of visits) {
+    for (const url of parsePhotoUrls(visit.photoUrl)) {
+      if (!urls.includes(url)) urls.push(url);
+      if (urls.length >= 6) return urls;
+    }
+  }
+  return urls;
+}
+
+function parsePhotoUrls(photoUrl: string | undefined): string[] {
+  if (!photoUrl) return [];
+  try {
+    const parsed = JSON.parse(photoUrl);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((item) => (typeof item === 'string' ? item : item?.url))
+        .filter((url): url is string => typeof url === 'string' && /^https?:\/\//.test(url));
+    }
+  } catch {
+    if (/^https?:\/\//.test(photoUrl)) return [photoUrl];
+  }
+  return [];
 }
 
 function storedPlace(visits: StoreVisit[]): PoiPlace | null {
