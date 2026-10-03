@@ -163,7 +163,7 @@ async function ensureLocation(body: Record<string, unknown>, id: string | null, 
   if (hasCoordinates(latitude, longitude) || facilityName.trim().length < 2) return;
 
   try {
-    const place = await locateFacility(facilityName, prefecture || undefined, AbortSignal.timeout(8000));
+    const place = await locateFacility(facilityName, prefecture || undefined, AbortSignal.timeout(20000));
     if (!place) return;
     assignPlace(body, place, prefecture);
   } catch (error) {
