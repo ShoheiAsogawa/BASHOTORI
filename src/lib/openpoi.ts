@@ -10,7 +10,9 @@ export {
   locateFacility as locateFacilityRemote,
   locationKey,
   pickBestPlace,
+  prefectureCenter,
   scorePlace,
+  searchPlaces,
   suggestPlaces,
 } from '../../shared/poi';
 

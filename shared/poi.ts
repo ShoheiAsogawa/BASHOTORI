@@ -524,7 +524,16 @@ export async function suggestPlaces(query: string, limit = 8, signal?: AbortSign
   return parsePlaces(data.suggestions ?? []);
 }
 
-async function searchPlaces(
+export function prefectureCenter(prefecture: string | undefined): { latitude: number; longitude: number } | null {
+  if (!prefecture) return null;
+  const bbox = PREFECTURE_BBOX[prefecture];
+  if (!bbox) return null;
+  const [minLng, minLat, maxLng, maxLat] = bbox.split(',').map(Number);
+  if (![minLng, minLat, maxLng, maxLat].every((value) => Number.isFinite(value))) return null;
+  return { latitude: (minLat + maxLat) / 2, longitude: (minLng + maxLng) / 2 };
+}
+
+export async function searchPlaces(
   query: string,
   limit: number,
   bbox: string | undefined,

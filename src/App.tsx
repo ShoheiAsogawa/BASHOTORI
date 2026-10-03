@@ -6,6 +6,7 @@ import StoreSearchView from './pages/StoreSearchView';
 import LoginView from './pages/LoginView';
 
 const MapView = lazy(() => import('./pages/MapView'));
+const PlaceRegisterView = lazy(() => import('./pages/PlaceRegisterView'));
 import { supabase } from './lib/supabase';
 import { Icon } from './components/Icon';
 
@@ -112,6 +113,14 @@ function App() {
         }
       />
       <Route path="/search" element={<StoreSearchView />} />
+      <Route
+        path="/places"
+        element={
+          <Suspense fallback={<div className="p-10 text-center text-slate-500">場所の登録を読み込み中...</div>}>
+            <PlaceRegisterView />
+          </Suspense>
+        }
+      />
               </Routes>
             </>
           ) : (

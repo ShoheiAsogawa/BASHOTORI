@@ -160,6 +160,7 @@ async function ensureLocation(body: Record<string, unknown>, id: string | null, 
     if (!('longitude' in body)) longitude = existing.longitude;
   }
 
+  if (body.skipGeocode === true) return;
   if (hasCoordinates(latitude, longitude) || facilityName.trim().length < 2) return;
 
   try {

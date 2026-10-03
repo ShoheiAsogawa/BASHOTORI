@@ -1,4 +1,5 @@
 import { authenticate } from './auth';
+import { reversePlace } from './nominatim';
 import { corsHeaders, isResponse, json } from './http';
 import { handlePhotos, readPhoto } from './photos';
 import { handleVisits } from './visits';
@@ -18,6 +19,22 @@ export default {
 
     const user = await authenticate(request, env);
     if (isResponse(user)) return user;
+
+    if (request.method === 'GET' && url.pathname === '/api/geocode/reverse') {
+      const latitude = Number(url.searchParams.get('lat'));
+      const longitude = Number(url.searchParams.get('lng'));
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return json({ error: '緯度経度が不正です' }, 400);
+      }
+      try {
+        const place = await reversePlace(latitude, longitude, request.signal);
+        if (!place) return json({ error: '日本国内のピンだけ住所にできます' }, 400);
+        return json(place);
+      } catch (error) {
+        console.error('reverse geocode failed', error instanceof Error ? error.message : 'unknown');
+        return json({ error: '住所を取得できませんでした' }, 502);
+      }
+    }
 
     if (url.pathname === '/api/visits') {
       return handleVisits(request, env, user, null);

@@ -1,6 +1,7 @@
 import { applyAliases, cleanFacilityQuery, pickBestPlace, scorePlace, splitBrand, type PoiPlace } from '../shared/poi.ts';
 
 const SEARCH_URL = 'https://nominatim.openstreetmap.org/search';
+const REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse';
 const USER_AGENT = 'BASHOTORI/1.0 (https://bashotori.com)';
 const MIN_INTERVAL_MS = 1100;
 let lastRequestAt = 0;
@@ -24,9 +25,22 @@ interface NominatimItem {
     city?: string;
     town?: string;
     village?: string;
+    county?: string;
     city_district?: string;
     suburb?: string;
+    quarter?: string;
+    neighbourhood?: string;
+    hamlet?: string;
+    road?: string;
+    house_number?: string;
   };
+}
+
+export interface ReversePlace {
+  address: string;
+  prefecture: string;
+  latitude: number;
+  longitude: number;
 }
 
 /** 連結された店名を、表記ゆれとブランド・地名を離した検索語に展開する。 */
@@ -114,5 +128,50 @@ function toPlace(item: NominatimItem): PoiPlace | null {
     level: null,
     licenses: ['ODbL-1.0'],
     attributions: ['© OpenStreetMap contributors'],
+  };
+}
+
+/** 地図ピンから住所を返す。ブラウザからは Worker 経由でのみ呼ぶ。 */
+export async function reversePlace(
+  latitude: number,
+  longitude: number,
+  signal?: AbortSignal,
+): Promise<ReversePlace | null> {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < 24 || latitude > 46.5 || longitude < 122 || longitude > 154) return null;
+  const url = new URL(REVERSE_URL);
+  url.searchParams.set('lat', String(latitude));
+  url.searchParams.set('lon', String(longitude));
+  url.searchParams.set('format', 'jsonv2');
+  url.searchParams.set('accept-language', 'ja');
+  url.searchParams.set('addressdetails', '1');
+  url.searchParams.set('zoom', '18');
+
+  await waitForTurn();
+  const response = await fetch(url, {
+    signal,
+    headers: {
+      Accept: 'application/json',
+      'Accept-Language': 'ja',
+      'User-Agent': USER_AGENT,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Nominatim reverse failed: ${response.status}`);
+  }
+  const item = (await response.json()) as NominatimItem;
+  const address = item.address ?? {};
+  const prefecture = address.state || address.province || '';
+  const city = address.city || address.town || address.village || address.county || '';
+  const ward = address.city_district || address.suburb || address.quarter || '';
+  const town = address.neighbourhood || address.hamlet || '';
+  const road = [address.road, address.house_number].filter(Boolean).join('');
+  const line = [prefecture, city, ward, town, road].filter(Boolean).join('');
+  const display = (item.display_name || '').replace(/, 日本$/, '').replace(/, /g, '');
+  return {
+    address: line || display,
+    prefecture,
+    latitude,
+    longitude,
   };
 }

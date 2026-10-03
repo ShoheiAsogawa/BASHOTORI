@@ -56,7 +56,13 @@ export async function getStoreVisits(): Promise<StoreVisit[]> {
   return response.json() as Promise<StoreVisit[]>;
 }
 
-export async function saveStoreVisit(visit: Partial<StoreVisit>): Promise<StoreVisit> {
+export type VisitWrite = Omit<Partial<StoreVisit>, 'prefecture' | 'address'> & {
+  skipGeocode?: boolean;
+  prefecture?: StoreVisit['prefecture'] | null;
+  address?: string | null;
+};
+
+export async function saveStoreVisit(visit: VisitWrite): Promise<StoreVisit> {
   const path = visit.id ? `/api/visits/${encodeURIComponent(visit.id)}` : '/api/visits';
   const method = visit.id ? 'PATCH' : 'POST';
   const response = await apiFetch(path, {
@@ -91,6 +97,15 @@ export async function updateStoreVisitLocation(
     }),
   });
   return true;
+}
+
+export async function reverseGeocodePin(
+  latitude: number,
+  longitude: number,
+): Promise<{ address: string; prefecture: string; latitude: number; longitude: number }> {
+  const params = new URLSearchParams({ lat: String(latitude), lng: String(longitude) });
+  const response = await apiFetch(`/api/geocode/reverse?${params.toString()}`);
+  return response.json() as Promise<{ address: string; prefecture: string; latitude: number; longitude: number }>;
 }
 
 export async function deleteStoreVisit(id: string): Promise<void> {

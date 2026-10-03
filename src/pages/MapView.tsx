@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { Icon } from '../components/Icon';
 import { StoreMap, rankColor, type MapPoint } from '../components/StoreMap';
@@ -230,7 +231,9 @@ export default function MapView() {
 
           {!loading && unresolved.length > 0 && (
             <p className="mt-3 text-xs text-slate-500">
-              {unresolved.length} 件は OpenPOI API で同名の施設が見つからず、地図に載っていません。登録時に候補から選ぶと位置が付きます。
+              {unresolved.length} 件は地図に載っていません。
+              <Link to="/places" className="ml-1 font-bold text-orange-600 underline">場所の登録</Link>
+              から住所とピンを後から追加できます。
             </p>
           )}
 

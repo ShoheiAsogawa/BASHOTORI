@@ -1,9 +1,15 @@
+import { useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Icon } from './Icon';
 import { supabase } from '../lib/supabase';
 
 export function Navbar() {
   const location = useLocation();
+  const activeRef = useRef<HTMLAnchorElement>(null);
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  }, [location.pathname]);
 
   const handleLogout = async () => {
     await supabase?.auth.signOut();
@@ -55,6 +61,16 @@ export function Navbar() {
                 <Icon name="MapPin" size={16} /> 地図
               </Link>
               <Link
+                to="/places"
+                className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all duration-200 flex items-center gap-2 ${
+                  location.pathname === '/places'
+                    ? 'bg-white text-orange-600 shadow-sm ring-1 ring-black/5'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+                }`}
+              >
+                <Icon name="Compass" size={16} /> 場所登録
+              </Link>
+              <Link
                 to="/search"
                 className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all duration-200 flex items-center gap-2 ${
                   location.pathname === '/search'
@@ -75,34 +91,47 @@ export function Navbar() {
           </button>
         </div>
 
-        <div className="md:hidden flex bg-slate-100/80 p-1 rounded-xl border border-slate-200/50 w-full">
+        <div className="md:hidden flex gap-1 overflow-x-auto scrollbar-hide bg-slate-100/80 p-1 rounded-xl border border-slate-200/50 w-full">
           <Link
+            ref={location.pathname === '/' ? activeRef : undefined}
             to="/"
-            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 ${
+            className={`shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 ${
               location.pathname === '/' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'
             }`}
           >
             <Icon name="Calendar" size={14} /> カレンダー
           </Link>
           <Link
+            ref={location.pathname === '/dashboard' ? activeRef : undefined}
             to="/dashboard"
-            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 ${
+            className={`shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 ${
               location.pathname === '/dashboard' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'
             }`}
           >
             <Icon name="TrendingUp" size={14} /> ダッシュボード
           </Link>
           <Link
+            ref={location.pathname === '/map' ? activeRef : undefined}
             to="/map"
-            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 ${
+            className={`shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 ${
               location.pathname === '/map' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'
             }`}
           >
             <Icon name="MapPin" size={14} /> 地図
           </Link>
           <Link
+            ref={location.pathname === '/places' ? activeRef : undefined}
+            to="/places"
+            className={`shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 ${
+              location.pathname === '/places' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'
+            }`}
+          >
+            <Icon name="Compass" size={14} /> 場所
+          </Link>
+          <Link
+            ref={location.pathname === '/search' ? activeRef : undefined}
             to="/search"
-            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 ${
+            className={`shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 ${
               location.pathname === '/search' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500'
             }`}
           >

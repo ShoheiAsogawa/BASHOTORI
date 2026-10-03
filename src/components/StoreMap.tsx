@@ -24,20 +24,48 @@ const RANK_COLOR: Record<Rank, string> = {
   D: '#ef4444',
 };
 
+export interface DraftPin {
+  latitude: number;
+  longitude: number;
+  label?: string;
+}
+
+export interface MapFocus {
+  latitude: number;
+  longitude: number;
+  zoom?: number;
+  token: number;
+}
+
 interface StoreMapProps {
   points: MapPoint[];
   selectedId?: string | null;
   onSelect?: (id: string) => void;
+  draftPin?: DraftPin | null;
+  onPick?: (latitude: number, longitude: number) => void;
+  focus?: MapFocus | null;
+  autoFit?: boolean;
 }
 
-export function StoreMap({ points, selectedId, onSelect }: StoreMapProps) {
+export function StoreMap({
+  points,
+  selectedId,
+  onSelect,
+  draftPin = null,
+  onPick,
+  focus = null,
+  autoFit = true,
+}: StoreMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const draftMarkerRef = useRef<L.Marker | null>(null);
   const userAdjustedRef = useRef(false);
   const programmaticRef = useRef(false);
   const onSelectRef = useRef(onSelect);
+  const onPickRef = useRef(onPick);
   onSelectRef.current = onSelect;
+  onPickRef.current = onPick;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -58,6 +86,9 @@ export function StoreMap({ points, selectedId, onSelect }: StoreMapProps) {
     };
     map.on('dragstart', markUserAdjusted);
     map.on('zoomstart', markUserAdjusted);
+    map.on('click', (event) => {
+      onPickRef.current?.(event.latlng.lat, event.latlng.lng);
+    });
 
     mapRef.current = map;
     return () => {
@@ -88,13 +119,16 @@ export function StoreMap({ points, selectedId, onSelect }: StoreMapProps) {
       });
       const marker = L.marker([point.latitude, point.longitude], { icon, title: point.facilityName });
       marker.bindPopup(popupElement(point));
-      marker.on('click', () => onSelectRef.current?.(point.id));
+      marker.on('click', (event) => {
+        L.DomEvent.stopPropagation(event);
+        onSelectRef.current?.(point.id);
+      });
       marker.addTo(map);
       markersRef.current.set(point.id, marker);
       bounds.push([point.latitude, point.longitude]);
     }
 
-    if (!userAdjustedRef.current && bounds.length > 0) {
+    if (autoFit && !userAdjustedRef.current && bounds.length > 0) {
       programmaticRef.current = true;
       map.fitBounds(bounds, {
         padding: [28, 28],
@@ -103,7 +137,55 @@ export function StoreMap({ points, selectedId, onSelect }: StoreMapProps) {
       });
       programmaticRef.current = false;
     }
-  }, [points, selectedId]);
+  }, [points, selectedId, autoFit]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.getContainer().style.cursor = onPick ? 'crosshair' : '';
+  }, [onPick]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!draftPin) {
+      draftMarkerRef.current?.remove();
+      draftMarkerRef.current = null;
+      return;
+    }
+    const icon = draftIcon();
+    const marker = draftMarkerRef.current;
+    if (!marker) {
+      const created = L.marker([draftPin.latitude, draftPin.longitude], {
+        icon,
+        draggable: true,
+        zIndexOffset: 1000,
+        title: draftPin.label || '登録する位置',
+      });
+      created.on('dragend', () => {
+        const latLng = created.getLatLng();
+        onPickRef.current?.(latLng.lat, latLng.lng);
+      });
+      created.addTo(map);
+      draftMarkerRef.current = created;
+      return;
+    }
+    const current = marker.getLatLng();
+    if (Math.abs(current.lat - draftPin.latitude) > 0.0000001 || Math.abs(current.lng - draftPin.longitude) > 0.0000001) {
+      marker.setLatLng([draftPin.latitude, draftPin.longitude]);
+    }
+    marker.setIcon(icon);
+  }, [draftPin]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !focus) return;
+    programmaticRef.current = true;
+    map.once('moveend', () => {
+      programmaticRef.current = false;
+    });
+    map.flyTo([focus.latitude, focus.longitude], focus.zoom ?? 15, { duration: 0.45 });
+  }, [focus]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -149,6 +231,15 @@ function popupElement(point: MapPoint): HTMLElement {
   }
 
   return root;
+}
+
+function draftIcon(): L.DivIcon {
+  return L.divIcon({
+    className: 'store-pin',
+    html: '<span style="display:block;width:22px;height:22px;border-radius:9999px;background:#ea580c;border:3px solid #fff;box-shadow:0 2px 8px rgba(234,88,12,.55)"></span>',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
 }
 
 export function rankColor(rank: Rank): string {
