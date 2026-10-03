@@ -14,6 +14,7 @@ export interface MapPoint {
   dateLabel: string;
   visitCount: number;
   address?: string;
+  photos?: string[];
 }
 
 const RANK_COLOR: Record<Rank, string> = {
@@ -123,7 +124,19 @@ export function StoreMap({
         iconAnchor: [size / 2, size / 2],
       });
       const marker = L.marker([point.latitude, point.longitude], { icon, title: point.facilityName });
-      marker.bindPopup(popupElement(point));
+      marker.bindPopup(popupElement(point), {
+        className: 'store-card-popup',
+        maxWidth: 280,
+        minWidth: 248,
+        autoPanPadding: [28, 28],
+      });
+      const popup = marker.getPopup();
+      const content = popup?.getContent();
+      if (popup && content instanceof HTMLElement) {
+        content.querySelectorAll('img').forEach((image) => {
+          image.addEventListener('load', () => popup.update());
+        });
+      }
       marker.on('click', (event) => {
         L.DomEvent.stopPropagation(event);
         onSelectRef.current?.(point.id);
@@ -133,7 +146,7 @@ export function StoreMap({
       bounds.push([point.latitude, point.longitude]);
     }
 
-    if (autoFit && !userAdjustedRef.current && bounds.length > 0) {
+    if (autoFit && !userAdjustedRef.current && !selectedId && bounds.length > 0) {
       programmaticRef.current = true;
       map.fitBounds(bounds, {
         padding: [28, 28],
@@ -211,31 +224,97 @@ export function StoreMap({
 
 function popupElement(point: MapPoint): HTMLElement {
   const root = document.createElement('div');
-  root.className = 'text-sm leading-snug';
+  root.className = 'store-card';
 
-  const title = document.createElement('strong');
+  const photos = (point.photos || []).filter((url) => url.startsWith('https://') || url.startsWith('http://'));
+  if (photos.length > 0) {
+    root.appendChild(photoStrip(photos, point.facilityName));
+  }
+
+  const body = document.createElement('div');
+  body.className = 'store-card-body';
+
+  const title = document.createElement('div');
+  title.className = 'store-card-title';
   title.textContent = point.facilityName;
-  root.appendChild(title);
+  body.appendChild(title);
 
   const meta = document.createElement('div');
-  meta.textContent = [point.prefecture, point.dateLabel, `${point.rank} / ${point.judgmentLabel}`]
+  meta.className = 'store-card-meta';
+  const dot = document.createElement('span');
+  dot.className = 'store-card-dot';
+  dot.style.background = RANK_COLOR[point.rank] || RANK_COLOR.C;
+  meta.appendChild(dot);
+  const metaText = document.createElement('span');
+  metaText.textContent = [point.prefecture, point.dateLabel, `${point.rank} / ${point.judgmentLabel}`]
     .filter(Boolean)
     .join(' · ');
-  root.appendChild(meta);
+  meta.appendChild(metaText);
+  body.appendChild(meta);
 
   if (point.visitCount > 1) {
     const count = document.createElement('div');
-    count.textContent = `視察 ${point.visitCount} 件`;
-    root.appendChild(count);
+    count.className = 'store-card-count';
+    count.textContent = `この店舗の視察 ${point.visitCount} 件`;
+    body.appendChild(count);
   }
 
   if (point.address) {
     const address = document.createElement('div');
+    address.className = 'store-card-address';
     address.textContent = point.address;
-    root.appendChild(address);
+    body.appendChild(address);
   }
 
+  const nav = document.createElement('a');
+  nav.className = 'store-card-nav';
+  nav.href = `https://www.google.com/maps/dir/?api=1&destination=${point.latitude},${point.longitude}&travelmode=driving`;
+  nav.target = '_blank';
+  nav.rel = 'noopener noreferrer';
+  nav.textContent = 'Googleマップでナビ';
+  body.appendChild(nav);
+
+  root.appendChild(body);
   return root;
+}
+
+function photoStrip(photos: string[], name: string): HTMLElement {
+  const frame = document.createElement('div');
+  frame.className = 'store-card-photos';
+  const image = document.createElement('img');
+  image.alt = name;
+  image.src = photos[0];
+  frame.appendChild(image);
+
+  if (photos.length === 1) return frame;
+
+  let index = 0;
+  const counter = document.createElement('div');
+  counter.className = 'store-card-photo-count';
+  counter.textContent = `1 / ${photos.length}`;
+  frame.appendChild(counter);
+
+  const show = (next: number) => {
+    index = (next + photos.length) % photos.length;
+    image.src = photos[index];
+    counter.textContent = `${index + 1} / ${photos.length}`;
+  };
+  frame.appendChild(photoButton('前の写真', '‹', () => show(index - 1), 'left'));
+  frame.appendChild(photoButton('次の写真', '›', () => show(index + 1), 'right'));
+  return frame;
+}
+
+function photoButton(label: string, glyph: string, onClick: () => void, side: 'left' | 'right'): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `store-card-photo-nav store-card-photo-nav-${side}`;
+  button.setAttribute('aria-label', label);
+  button.textContent = glyph;
+  button.addEventListener('click', (event) => {
+    L.DomEvent.stop(event);
+    onClick();
+  });
+  return button;
 }
 
 function draftIcon(): L.DivIcon {

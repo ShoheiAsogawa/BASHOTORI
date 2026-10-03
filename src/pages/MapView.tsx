@@ -64,6 +64,7 @@ export default function MapView() {
       dateLabel: formatDateJP(group.latest.date),
       visitCount: group.visits.length,
       address: place.address || group.latest.address,
+      photos: photoUrls(group.visits),
     }];
   });
 
@@ -209,6 +210,32 @@ function groupVisits(visits: StoreVisit[]): FacilityGroup[] {
     const visitsInGroup = [...list].sort((a, b) => b.date.localeCompare(a.date));
     return { key, visits: visitsInGroup, latest: visitsInGroup[0] };
   });
+}
+
+function photoUrls(visits: StoreVisit[]): string[] {
+  const urls: string[] = [];
+  for (const visit of visits) {
+    for (const url of parsePhotoUrls(visit.photoUrl)) {
+      if (!urls.includes(url)) urls.push(url);
+      if (urls.length >= 6) return urls;
+    }
+  }
+  return urls;
+}
+
+function parsePhotoUrls(photoUrl: string | undefined): string[] {
+  if (!photoUrl) return [];
+  try {
+    const parsed = JSON.parse(photoUrl);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((item) => (typeof item === 'string' ? item : item?.url))
+        .filter((url): url is string => typeof url === 'string' && /^https?:\/\//.test(url));
+    }
+  } catch {
+    if (/^https?:\/\//.test(photoUrl)) return [photoUrl];
+  }
+  return [];
 }
 
 function storedPlace(visits: StoreVisit[]): PoiPlace | null {
