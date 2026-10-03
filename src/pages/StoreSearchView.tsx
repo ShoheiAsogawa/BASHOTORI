@@ -3,29 +3,23 @@ import { Navbar } from '../components/Navbar';
 import { Icon } from '../components/Icon';
 import { callGemini } from '../lib/gemini';
 import { marked } from 'marked';
-import { checkRateLimit, incrementRequestCount } from '../lib/rateLimit';
 
 export default function StoreSearchView() {
   const [location, setLocation] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState('');
+  const [hint, setHint] = useState('');
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!location.trim()) return;
-
-    // リクエスト制限チェック
-    const rateLimit = checkRateLimit();
-    if (!rateLimit.allowed) {
-      setResult(`❌ **リクエスト制限に達しました**\n\n本日の検索回数の上限（${rateLimit.limit}回）に達しました。\n明日（${new Date(new Date().setDate(new Date().getDate() + 1)).toLocaleDateString('ja-JP')}）にリセットされます。\n\n無料枠を超えないよう、1日あたり${rateLimit.limit}回までに制限しています。`);
+    if (!location.trim()) {
+      setHint('地域名を入力してから検索してください');
       return;
     }
+    setHint('');
 
     setLoading(true);
     setResult('');
-
-    // リクエストカウントを増やす
-    incrementRequestCount();
 
     const prompt = `
 あなたは日本の商業施設リサーチャーです。
@@ -96,18 +90,21 @@ export default function StoreSearchView() {
               地域名を入力すると、AIがGoogle検索を行い、催事に適した商業施設をリストアップします。
             </p>
 
-            <form onSubmit={handleSearch} className="flex gap-2">
+            <form onSubmit={handleSearch} className="flex flex-col gap-2 sm:flex-row">
               <input
                 type="text"
                 value={location}
-                onChange={(e) => setLocation(e.target.value)}
+                onChange={(e) => {
+                  setLocation(e.target.value);
+                  if (e.target.value.trim()) setHint('');
+                }}
                 placeholder="例: 大阪府岸和田市、神奈川県横浜市..."
-                className="flex-1 p-3 bg-slate-50 border border-slate-300 rounded-xl text-base outline-none focus:ring-2 focus:ring-orange-500 transition"
+                className="min-w-0 flex-1 p-3 bg-slate-50 border border-slate-300 rounded-xl text-base outline-none focus:ring-2 focus:ring-orange-500 transition"
               />
               <button
                 type="submit"
-                disabled={loading || !location || !checkRateLimit().allowed}
-                className="bg-slate-900 text-white px-4 py-3 rounded-xl font-bold hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 shadow-lg w-32 justify-center whitespace-nowrap text-sm"
+                disabled={loading}
+                className="shrink-0 bg-slate-900 text-white px-4 py-3 rounded-xl font-bold hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 shadow-lg w-full sm:w-32 justify-center whitespace-nowrap text-sm"
               >
                 {loading ? (
                   <div className="flex items-center gap-2">
@@ -121,6 +118,7 @@ export default function StoreSearchView() {
                 )}
               </button>
             </form>
+            {hint && <p className="mt-2 text-sm font-bold text-orange-700">{hint}</p>}
           </div>
 
           {result && (
