@@ -5,7 +5,7 @@ import { RANKS, JUDGMENT, ENVIRONMENTS, REGISTER_COUNTS, TRAFFIC_LEVELS, SEASONA
 import { PREFECTURES } from '../types';
 import { formatDateJP } from '../lib/utils';
 import { canEditVisits } from '../lib/auth';
-import { isGeneralRecord, RecordLegend, RecordSourceBadge } from './RecordLegend';
+import { isGeneralRecord } from './RecordLegend';
 import type { StoreVisit } from '../types';
 import * as XLSX from 'xlsx';
 
@@ -159,7 +159,6 @@ export function Dashboard({
       '日付': formatDateJP(visit.date),
       '施設名': visit.facilityName || '',
       '担当者': visit.staffName || '',
-      '記録': isGeneralRecord(visit.recordedRole) ? '一般' : '管理者',
       '都道府県': visit.prefecture || '',
       'ランク': visit.rank || '',
       '判定': (JUDGMENT[visit.judgment] || JUDGMENT.pending).label,
@@ -829,9 +828,6 @@ export function Dashboard({
                 </button>
               </div>
             </div>
-            <div className="mb-3">
-              <RecordLegend />
-            </div>
             <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1052,10 +1048,7 @@ export function Dashboard({
                               {formatDateJP(visit.date)}
                             </td>
                             <td className="px-4 py-3">
-                              <div className="font-bold text-slate-800 flex items-center gap-2">
-                                {visit.facilityName}
-                                <RecordSourceBadge role={visit.recordedRole} />
-                              </div>
+                              <div className="font-bold text-slate-800">{visit.facilityName}</div>
                             </td>
                             <td className="px-4 py-3 text-slate-600">{visit.staffName}</td>
                             <td className="px-4 py-3 text-slate-600">{visit.prefecture || '-'}</td>

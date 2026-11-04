@@ -253,8 +253,7 @@ function popupElement(point: MapPoint): HTMLElement {
   dot.style.background = RANK_COLOR[point.rank] || RANK_COLOR.C;
   meta.appendChild(dot);
   const metaText = document.createElement('span');
-  const sourceLabel = point.recordedRole === 'general' ? '一般の記録' : point.recordedRole === 'mixed' ? '管理者と一般の記録' : '管理者の記録';
-  metaText.textContent = [sourceLabel, point.prefecture, point.dateLabel, `${point.rank} / ${point.judgmentLabel}`]
+  metaText.textContent = [point.prefecture, point.dateLabel, `${point.rank} / ${point.judgmentLabel}`]
     .filter(Boolean)
     .join(' · ');
   meta.appendChild(metaText);

@@ -4,7 +4,7 @@ import { Navbar } from '../components/Navbar';
 import { Icon } from '../components/Icon';
 import { MapFilterBar, sortGroups } from '../components/MapFilterBar';
 import { StoreMap, rankColor, type MapPoint } from '../components/StoreMap';
-import { isGeneralRecord, RecordLegend, RecordSourceBadge } from '../components/RecordLegend';
+import { isGeneralRecord } from '../components/RecordLegend';
 import { getStoreVisits } from '../lib/api';
 import { JUDGMENT } from '../lib/constants';
 import { EMPTY_VISIT_FILTER, groupMatches, type VisitFilterState } from '../lib/visitFilters';
@@ -81,11 +81,8 @@ export default function MapView() {
                 <Icon name="MapPin" className="text-orange-500" /> 視察マップ
               </h2>
               <p className="text-sm text-slate-500 mt-1">
-                保存済みの位置だけを表示します。ピンの色は最新のランク、水色の枠は一般アカウントの記録です。
+                保存済みの位置だけを表示します。ピンの色は最新のランクです。
               </p>
-              <div className="mt-2">
-                <RecordLegend />
-              </div>
             </div>
           </div>
 
@@ -142,14 +139,7 @@ export default function MapView() {
                                 style={{ background: place ? rankColor(group.latest.rank) : '#cbd5e1' }}
                               />
                               <span className="min-w-0">
-                                <span className="flex items-center gap-2 text-sm font-bold text-slate-800">
-                                  <span className="truncate">{group.latest.facilityName}</span>
-                                  {groupSource(group.visits) === 'mixed' ? (
-                                    <span className="shrink-0 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-700">混在</span>
-                                  ) : (
-                                    <RecordSourceBadge role={groupSource(group.visits)} />
-                                  )}
-                                </span>
+                                <span className="block truncate text-sm font-bold text-slate-800">{group.latest.facilityName}</span>
                                 <span className="block text-xs text-slate-500">
                                   {group.latest.prefecture || '都道府県なし'} · {group.latest.rank} · {judgment.label}
                                   {group.visits.length > 1 ? ` · ${group.visits.length}件` : ''}

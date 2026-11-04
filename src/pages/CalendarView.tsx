@@ -7,7 +7,6 @@ import { DayDetailModal } from '../components/DayDetailModal';
 import { getStoreVisits, saveStoreVisit, deleteStoreVisit } from '../lib/api';
 import { formatDate } from '../lib/utils';
 import { canEditVisits } from '../lib/auth';
-import { RecordLegend } from '../components/RecordLegend';
 import type { StoreVisit } from '../types';
 
 export default function CalendarView() {
@@ -186,9 +185,6 @@ export default function CalendarView() {
             </div>
           </div>
 
-          <div className="mb-3">
-            <RecordLegend />
-          </div>
           <Calendar
             currentDate={currentDate}
             visits={filteredVisits}

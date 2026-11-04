@@ -73,9 +73,7 @@ export function Calendar({ currentDate, visits, onDateClick, onAddClick }: Calen
                         general ? 'border-sky-500 bg-sky-100' : `${RANKS[v.rank].border} bg-slate-50`
                       }`}
                     >
-                      <span className={`${general ? 'text-sky-700' : RANKS[v.rank].text} font-bold mr-1`}>
-                        {general ? '一般' : v.rank}
-                      </span>
+                      <span className={`${RANKS[v.rank].text} font-bold mr-1`}>{v.rank}</span>
                       {v.facilityName}
                     </div>
                   );
