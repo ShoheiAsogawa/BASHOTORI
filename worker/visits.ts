@@ -101,15 +101,27 @@ function ensureVisitColumns(env: Env): Promise<void> {
   return visitColumnsReady;
 }
 
-export async function canAttachToVisit(env: Env, user: AuthUser, id: string): Promise<boolean> {
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
+export async function visitOwner(env: Env, id: string): Promise<string | null | undefined> {
   await ensureVisitColumns(env);
-  if (user.role === 'readonly') return false;
-  if (user.role === 'admin') return true;
   const row = await env.DB.prepare(
     'SELECT recorded_by FROM store_visits WHERE id = ?',
   ).bind(id).first<{ recorded_by: string | null }>();
-  if (!row) return true;
-  return row.recorded_by === user.id;
+  if (!row) return undefined;
+  return row.recorded_by;
+}
+
+export async function canAttachToVisit(env: Env, user: AuthUser, id: string): Promise<boolean> {
+  if (user.role === 'readonly' || !isUuid(id)) return false;
+  if (user.role === 'admin') return true;
+  const owner = await visitOwner(env, id);
+  if (owner === undefined) return true;
+  return owner === user.id;
 }
 
 export async function canModifyVisit(env: Env, user: AuthUser, id: string): Promise<boolean> {
@@ -142,45 +154,78 @@ async function listVisits(env: Env, user: AuthUser): Promise<Response> {
   return json((results || []).map(toVisit));
 }
 
+const REQUIRED_FIELDS = ['date', 'facilityName', 'staffName', 'rank', 'judgment', 'environment', 'imitationTable'] as const;
+
+async function readBody(request: Request): Promise<Record<string, unknown> | Response> {
+  const length = Number(request.headers.get('content-length') || 0);
+  if (length > 1_000_000) return json({ error: 'リクエストが大きすぎます' }, 413);
+  try {
+    const body = await request.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ error: '不正なリクエストです' }, 400);
+    return body as Record<string, unknown>;
+  } catch {
+    return json({ error: '不正なリクエストです' }, 400);
+  }
+}
+
+function hasRequiredFields(body: Record<string, unknown>): boolean {
+  return REQUIRED_FIELDS.every((key) => typeof body[key] === 'string' && body[key].trim().length > 0);
+}
+
 async function writeVisit(request: Request, env: Env, user: AuthUser, id: string | null): Promise<Response> {
   if (user.role === 'readonly') return json({ error: 'Forbidden' }, 403);
+  const body = await readBody(request);
+  if (body instanceof Response) return body;
   if (id && !(await canModifyVisit(env, user, id))) return json({ error: 'Not found' }, 404);
 
-  const body = (await request.json()) as Record<string, unknown>;
   const now = new Date().toISOString();
+  let visitId = id;
+  if (!visitId) {
+    if (!hasRequiredFields(body)) return json({ error: '必須項目が不足しています' }, 400);
+    const requested = typeof body.id === 'string' ? body.id.trim().toLowerCase() : '';
+    visitId = isUuid(requested) ? requested : crypto.randomUUID();
+    if ((await visitOwner(env, visitId)) !== undefined) return json({ error: 'Not found' }, 404);
+  }
   await ensureLocation(body, id, env);
 
-  if (!id) {
-    const visitId = crypto.randomUUID();
-    const columns = ['id', 'created_at', 'updated_at'];
-    const values: unknown[] = [visitId, now, now];
+  try {
+    if (!id) {
+      const columns = ['id', 'created_at', 'updated_at'];
+      const values: unknown[] = [visitId, now, now];
+      for (const [key, column] of Object.entries(COLUMNS)) {
+        if (!(key in body)) continue;
+        columns.push(column);
+        values.push(serialize(key, body[key]));
+      }
+      columns.push('recorded_by', 'recorded_role');
+      values.push(user.id, user.role === 'general' ? 'general' : 'admin');
+      const placeholders = columns.map(() => '?').join(', ');
+      await env.DB.prepare(
+        `INSERT INTO store_visits (${columns.join(', ')}) VALUES (${placeholders})`,
+      ).bind(...values).run();
+      return json(await readVisit(env, visitId), 201);
+    }
+
+    const assignments = ['updated_at = ?'];
+    const values: unknown[] = [now];
     for (const [key, column] of Object.entries(COLUMNS)) {
       if (!(key in body)) continue;
-      columns.push(column);
+      assignments.push(`${column} = ?`);
       values.push(serialize(key, body[key]));
     }
-    columns.push('recorded_by', 'recorded_role');
-    values.push(user.id, user.role === 'general' ? 'general' : 'admin');
-    const placeholders = columns.map(() => '?').join(', ');
-    await env.DB.prepare(
-      `INSERT INTO store_visits (${columns.join(', ')}) VALUES (${placeholders})`,
-    ).bind(...values).run();
-    return json(await readVisit(env, visitId), 201);
+    values.push(id);
+    let sql = `UPDATE store_visits SET ${assignments.join(', ')} WHERE id = ?`;
+    if (user.role !== 'admin') {
+      sql += ' AND recorded_by = ?';
+      values.push(user.id);
+    }
+    const result = await env.DB.prepare(sql).bind(...values).run();
+    if (result.meta.changes === 0) return json({ error: 'Not found' }, 404);
+    return json(await readVisit(env, id));
+  } catch (error) {
+    console.error('visit write failed', error instanceof Error ? error.message : 'unknown');
+    return json({ error: '保存できませんでした' }, 400);
   }
-
-  const assignments = ['updated_at = ?'];
-  const values: unknown[] = [now];
-  for (const [key, column] of Object.entries(COLUMNS)) {
-    if (!(key in body)) continue;
-    assignments.push(`${column} = ?`);
-    values.push(serialize(key, body[key]));
-  }
-  values.push(id);
-  const result = await env.DB.prepare(
-    `UPDATE store_visits SET ${assignments.join(', ')} WHERE id = ?`,
-  ).bind(...values).run();
-  if (result.meta.changes === 0) return json({ error: 'Not found' }, 404);
-  return json(await readVisit(env, id));
 }
 
 async function deleteVisit(env: Env, user: AuthUser, id: string): Promise<Response> {

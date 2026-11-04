@@ -5,6 +5,7 @@ import { RANKS, JUDGMENT, ENVIRONMENTS, REGISTER_COUNTS, TRAFFIC_LEVELS, SEASONA
 import { PREFECTURES } from '../types';
 import { formatDateJP } from '../lib/utils';
 import { canEditVisits } from '../lib/auth';
+import type { VisitWrite } from '../lib/api';
 import { isGeneralRecord } from './RecordLegend';
 import type { StoreVisit } from '../types';
 import * as XLSX from 'xlsx';
@@ -41,7 +42,7 @@ interface DashboardProps {
   filterMonth: string;
   onFilterMonthChange: (month: string) => void;
   filteredVisits: StoreVisit[];
-  onSave: (data: Partial<StoreVisit>) => Promise<StoreVisit>;
+  onSave: (data: VisitWrite) => Promise<StoreVisit>;
   loading: boolean;
 }
 

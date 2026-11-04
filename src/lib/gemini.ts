@@ -175,6 +175,7 @@ export async function callGemini(prompt: string): Promise<string> {
   try {
     const response = await fetch('/api/gemini', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt }),
     });

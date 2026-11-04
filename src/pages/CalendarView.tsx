@@ -4,7 +4,7 @@ import { Icon } from '../components/Icon';
 import { Calendar } from '../components/Calendar';
 import { StoreFormModal } from '../components/StoreFormModal';
 import { DayDetailModal } from '../components/DayDetailModal';
-import { getStoreVisits, saveStoreVisit, deleteStoreVisit } from '../lib/api';
+import { getStoreVisits, saveStoreVisit, deleteStoreVisit, type VisitWrite } from '../lib/api';
 import { formatDate } from '../lib/utils';
 import { canEditVisits } from '../lib/auth';
 import type { StoreVisit } from '../types';
@@ -39,7 +39,7 @@ export default function CalendarView() {
     }
   };
 
-  const handleSave = async (data: Partial<StoreVisit>): Promise<StoreVisit> => {
+  const handleSave = async (data: VisitWrite): Promise<StoreVisit> => {
     setLoading(true);
     try {
       const savedData = await saveStoreVisit(data);

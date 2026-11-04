@@ -94,7 +94,7 @@ async function callDeepSeek(apiKey: string, prompt: string): Promise<Response> {
   }
 }
 
-/** ログイン不要の AI 検索。既存の /api/gemini からも呼ぶ。 */
+/** ログイン済みなら誰でも使える AI 検索。既存の /api/gemini からも呼ぶ。 */
 export async function handleDeepSeek(request: Request, env: Env): Promise<Response> {
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: cors });
