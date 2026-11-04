@@ -325,9 +325,12 @@ function photoButton(label: string, glyph: string, onClick: () => void, side: 'l
 }
 
 function draftIcon(): L.DivIcon {
+  const sky = document.documentElement.dataset.theme === 'general';
+  const fill = sky ? '#0ea5e9' : '#ea580c';
+  const shadow = sky ? 'rgba(14,165,233,.55)' : 'rgba(234,88,12,.55)';
   return L.divIcon({
     className: 'store-pin',
-    html: '<span style="display:block;width:22px;height:22px;border-radius:9999px;background:#ea580c;border:3px solid #fff;box-shadow:0 2px 8px rgba(234,88,12,.55)"></span>',
+    html: `<span style="display:block;width:22px;height:22px;border-radius:9999px;background:${fill};border:3px solid #fff;box-shadow:0 2px 8px ${shadow}"></span>`,
     iconSize: [22, 22],
     iconAnchor: [11, 11],
   });
