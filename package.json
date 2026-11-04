@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "type-check": "tsc --noEmit",
+    "type-check": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit",
     "deploy": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy.ps1",
     "deploy:frontend": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy.ps1 -Target frontend",
     "deploy:lambda": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy.ps1 -Target lambda"
