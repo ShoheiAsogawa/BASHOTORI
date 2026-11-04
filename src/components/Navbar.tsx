@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Icon } from './Icon';
-import { supabase } from '../lib/supabase';
+import { logout } from '../lib/auth';
 
 export function Navbar() {
   const location = useLocation();
@@ -12,7 +12,7 @@ export function Navbar() {
   }, [location.pathname]);
 
   const handleLogout = async () => {
-    await supabase?.auth.signOut();
+    await logout();
   };
 
   return (

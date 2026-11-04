@@ -1,37 +1,61 @@
-import { supabase } from './supabase';
-
 export type UserRole = 'readonly' | 'admin' | null;
 
-/**
- * 現在のユーザーのロールを取得
- */
-export async function getUserRole(): Promise<UserRole> {
-  const { data: { user } } = await supabase?.auth.getUser() || { data: { user: null } };
-  if (!user) return null;
-  
-  // ユーザーメタデータからロールを取得
-  const role = user.user_metadata?.role;
-  if (role === 'admin' || role === 'readonly') {
-    return role;
-  }
-  
-  // デフォルトは読み取り専用
-  return 'readonly';
+export interface SessionUser {
+  id: string;
+  email: string;
+  role: 'admin' | 'readonly';
 }
 
-/**
- * 現在のユーザーが管理者かどうかを判定
- */
+let cached: SessionUser | null | undefined;
+
+function apiBase(): string {
+  return import.meta.env.VITE_API_BASE_URL ?? '';
+}
+
+export async function getCurrentUser(): Promise<SessionUser | null> {
+  const response = await fetch(`${apiBase()}/api/auth/me`, { credentials: 'include' });
+  if (!response.ok) {
+    cached = null;
+    return null;
+  }
+  const user = (await response.json()) as SessionUser;
+  cached = user;
+  return user;
+}
+
+export async function login(email: string, password: string): Promise<SessionUser> {
+  const response = await fetch(`${apiBase()}/api/auth/login`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const body = await response.json().catch(() => ({})) as { error?: string; id?: string; email?: string; role?: SessionUser['role'] };
+  if (!response.ok || !body.id || !body.email || (body.role !== 'admin' && body.role !== 'readonly')) {
+    throw new Error(body.error || 'ログインに失敗しました');
+  }
+  const user: SessionUser = { id: body.id, email: body.email, role: body.role };
+  cached = user;
+  return user;
+}
+
+export async function logout(): Promise<void> {
+  await fetch(`${apiBase()}/api/auth/logout`, { method: 'POST', credentials: 'include' });
+  cached = null;
+  window.location.assign('/login');
+}
+
+export async function getUserRole(): Promise<UserRole> {
+  const user = cached !== undefined ? cached : await getCurrentUser();
+  return user?.role ?? null;
+}
+
 export async function isAdmin(): Promise<boolean> {
   const role = await getUserRole();
   return role === 'admin';
 }
 
-/**
- * 現在のユーザーが読み取り専用かどうかを判定
- */
 export async function isReadOnly(): Promise<boolean> {
   const role = await getUserRole();
   return role === 'readonly';
 }
-

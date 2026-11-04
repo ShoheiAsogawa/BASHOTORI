@@ -16,11 +16,12 @@
       "enabled": true
     }
   },
-  "vars": {
-    "SUPABASE_URL": "https://nfxzluqlprkelwociuaa.supabase.co"
-  },
-  // SUPABASE_PUBLISHABLE_KEY と DEEPSEEK_API_KEY は secret で入れる。
-  // 公開キーはログイン確認だけに使い、Supabase のテーブルには書き込まない。
+  "vars": {},
+  // DEEPSEEK_API_KEY は secret で入れる。
+  // ログインは D1 の app_users。最初の管理者は次のどちらかで作る。
+  // 1. secret の ADMIN_EMAIL と ADMIN_PASSWORD を設定し、そのメールとパスワードでログインする。
+  // 2. secret の AUTH_SETUP_TOKEN を設定し、POST /api/auth/setup に X-Setup-Token を付ける。
+  // Supabase のユーザーは引き継がない。管理者を作ったあとに POST /api/auth/users で追加する。
   "d1_databases": [
     {
       "binding": "DB",

@@ -5,7 +5,7 @@ import { StoreMap, type MapFocus, type MapPoint } from '../components/StoreMap';
 import { isAdmin } from '../lib/auth';
 import { getCurrentLocation } from '../lib/location';
 import { locationKey, prefectureCenter, scorePlace, searchPlaces, suggestPlaces, type PoiPlace } from '../lib/openpoi';
-import { getStoreVisits, reverseGeocodePin, saveStoreVisit, type VisitWrite } from '../lib/supabase';
+import { getStoreVisits, reverseGeocodePin, saveStoreVisit, type VisitWrite } from '../lib/api';
 import { formatDate, formatDateJP } from '../lib/utils';
 import { PREFECTURES, type StoreVisit } from '../types';
 

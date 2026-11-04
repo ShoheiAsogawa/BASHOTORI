@@ -1,4 +1,4 @@
-import { authenticate } from './auth';
+import { authenticate, handleAuth } from './auth';
 import { handleDeepSeek } from './deepseek';
 import { reversePlace } from './nominatim';
 import { corsHeaders, isResponse, json } from './http';
@@ -14,6 +14,10 @@ export default {
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders });
+    }
+
+    if (url.pathname.startsWith('/api/auth/')) {
+      return handleAuth(request, env, url);
     }
 
     if (request.method === 'GET' && url.pathname.startsWith('/api/photos/')) {

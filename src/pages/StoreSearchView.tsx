@@ -9,7 +9,7 @@ import {
   searchArea,
   type Origin,
 } from '../lib/nearbySearch';
-import { reverseGeocodePin } from '../lib/supabase';
+import { reverseGeocodePin } from '../lib/api';
 import { marked } from 'marked';
 
 export default function StoreSearchView() {

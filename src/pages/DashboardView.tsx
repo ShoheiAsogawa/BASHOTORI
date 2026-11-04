@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Navbar } from '../components/Navbar';
 import { Dashboard } from '../components/Dashboard';
-import { getStoreVisits, saveStoreVisit } from '../lib/supabase';
+import { getStoreVisits, saveStoreVisit } from '../lib/api';
 import type { StoreVisit } from '../types';
 
 export default function DashboardView() {

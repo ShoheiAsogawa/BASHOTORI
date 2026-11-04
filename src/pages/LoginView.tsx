@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Icon } from '../components/Icon';
-import { supabase } from '../lib/supabase';
+import { login, type SessionUser } from '../lib/auth';
 
 interface LoginViewProps {
-  onLoginSuccess: () => void;
+  onLoginSuccess: (user: SessionUser) => void;
 }
 
 export default function LoginView({ onLoginSuccess }: LoginViewProps) {
@@ -18,24 +18,10 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     setError(null);
 
     try {
-      if (!supabase) {
-        throw new Error('Supabase client is not initialized');
-      }
-
-      const response = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (response.error) throw response.error;
-
-      if (response.data.user) {
-        // ユーザーのメタデータからロールを確認（必要に応じて）
-        // ここでは単純にログイン成功として処理
-        onLoginSuccess();
-      }
-    } catch (err: any) {
-      setError(err.message || 'ログインに失敗しました');
+      const user = await login(email, password);
+      onLoginSuccess(user);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'ログインに失敗しました');
     } finally {
       setLoading(false);
     }

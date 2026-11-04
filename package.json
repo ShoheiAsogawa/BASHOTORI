@@ -15,7 +15,6 @@
     "deploy:lambda": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy.ps1 -Target lambda"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.0",
     "browser-image-compression": "^2.0.2",
     "date-fns": "^3.0.0",
     "leaflet": "^1.9.4",
