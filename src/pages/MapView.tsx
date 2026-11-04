@@ -4,7 +4,7 @@ import { Navbar } from '../components/Navbar';
 import { Icon } from '../components/Icon';
 import { MapFilterBar, sortGroups } from '../components/MapFilterBar';
 import { StoreMap, rankColor, type MapPoint } from '../components/StoreMap';
-import { getStoreVisits } from '../lib/supabase';
+import { getStoreVisits } from '../lib/api';
 import { JUDGMENT } from '../lib/constants';
 import { EMPTY_VISIT_FILTER, groupMatches, type VisitFilterState } from '../lib/visitFilters';
 import { locationKey, type PoiPlace } from '../lib/openpoi';

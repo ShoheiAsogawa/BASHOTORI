@@ -6,7 +6,7 @@ import { formatDate, generateId } from '../lib/utils';
 import { uploadImage, deleteImage, compressImage } from '../lib/storage';
 import { locateFacility, suggestPlaces, writePoiCache, type PoiPlace } from '../lib/openpoi';
 import { getCurrentLocation } from '../lib/location';
-import { reverseGeocodePin } from '../lib/supabase';
+import { reverseGeocodePin } from '../lib/api';
 import { StoreMap, type DraftPin, type MapFocus } from './StoreMap';
 import type { StoreVisit, Photo, CustomerSegment } from '../types';
 

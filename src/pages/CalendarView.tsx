@@ -4,7 +4,7 @@ import { Icon } from '../components/Icon';
 import { Calendar } from '../components/Calendar';
 import { StoreFormModal } from '../components/StoreFormModal';
 import { DayDetailModal } from '../components/DayDetailModal';
-import { getStoreVisits, saveStoreVisit, deleteStoreVisit } from '../lib/supabase';
+import { getStoreVisits, saveStoreVisit, deleteStoreVisit } from '../lib/api';
 import { formatDate } from '../lib/utils';
 import { isAdmin } from '../lib/auth';
 import type { StoreVisit } from '../types';

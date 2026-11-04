@@ -1,43 +1,9 @@
-import { createClient } from '@supabase/supabase-js';
 import type { StoreVisit } from '@/types';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-// デバッグ用：環境変数の確認
-console.log('Supabase環境変数チェック:', {
-  url: supabaseUrl ? '✓ 設定済み' : '✗ 未設定',
-  key: supabaseAnonKey ? '✓ 設定済み' : '✗ 未設定',
-  urlValue: supabaseUrl ? supabaseUrl.substring(0, 30) + '...' : 'undefined',
-});
-
-// Supabaseクライアントの初期化
-let supabase: ReturnType<typeof createClient> | null = null;
-
-if (supabaseUrl && supabaseAnonKey) {
-  try {
-    supabase = createClient(supabaseUrl, supabaseAnonKey);
-    console.log('✅ Supabase client initialized successfully');
-  } catch (error) {
-    console.error('❌ Supabase client initialization error:', error);
-  }
-} else {
-  console.error('❌ Supabase環境変数が設定されていません。');
-  console.error('   .envファイルを確認し、開発サーバーを再起動してください。');
-  console.error('   必要な環境変数:');
-  console.error('   - VITE_SUPABASE_URL');
-  console.error('   - VITE_SUPABASE_ANON_KEY');
-}
-
-export { supabase };
 
 async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
-  const session = await supabase?.auth.getSession();
-  const token = session?.data.session?.access_token;
-  if (token) headers.set('Authorization', `Bearer ${token}`);
   const base = import.meta.env.VITE_API_BASE_URL ?? '';
-  const response = await fetch(`${base}${path}`, { ...init, headers });
+  const response = await fetch(`${base}${path}`, { ...init, headers, credentials: 'include' });
   if (!response.ok) {
     let message = `API request failed: ${response.status}`;
     try {

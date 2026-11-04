@@ -1,4 +1,4 @@
-import { apiFetch } from './supabase';
+import { apiFetch } from './api';
 import type { Photo } from '@/types';
 
 // 画像をアップロード
