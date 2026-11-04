@@ -1,11 +1,16 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Icon } from './Icon';
-import { logout } from '../lib/auth';
+import { getUserRole, logout } from '../lib/auth';
 
 export function Navbar() {
   const location = useLocation();
   const activeRef = useRef<HTMLAnchorElement>(null);
+  const [admin, setAdmin] = useState(false);
+
+  useEffect(() => {
+    getUserRole().then((role) => setAdmin(role === 'admin')).catch(() => setAdmin(false));
+  }, []);
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
@@ -60,6 +65,7 @@ export function Navbar() {
               >
                 <Icon name="MapPin" size={16} /> 地図
               </Link>
+              {admin && (
               <Link
                 to="/places"
                 className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all duration-200 flex items-center gap-2 ${
@@ -70,6 +76,7 @@ export function Navbar() {
               >
                 <Icon name="Compass" size={16} /> 場所登録
               </Link>
+              )}
               <Link
                 to="/search"
                 className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all duration-200 flex items-center gap-2 ${
@@ -119,6 +126,7 @@ export function Navbar() {
           >
             <Icon name="MapPin" size={14} /> 地図
           </Link>
+          {admin && (
           <Link
             ref={location.pathname === '/places' ? activeRef : undefined}
             to="/places"
@@ -128,6 +136,7 @@ export function Navbar() {
           >
             <Icon name="Compass" size={14} /> 場所
           </Link>
+          )}
           <Link
             ref={location.pathname === '/search' ? activeRef : undefined}
             to="/search"

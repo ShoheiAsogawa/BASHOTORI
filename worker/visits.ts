@@ -75,25 +75,76 @@ interface VisitRow {
   poi_attributions: string | null;
   created_at: string;
   updated_at: string;
+  recorded_by: string | null;
+  recorded_role: string | null;
+}
+
+let visitColumnsReady: Promise<void> | null = null;
+
+function ensureVisitColumns(env: Env): Promise<void> {
+  visitColumnsReady ??= (async () => {
+    const info = await env.DB.prepare('PRAGMA table_info(store_visits)').all<{ name: string }>();
+    const names = new Set((info.results || []).map((column) => column.name));
+    if (!names.has('recorded_by')) {
+      await env.DB.prepare('ALTER TABLE store_visits ADD COLUMN recorded_by TEXT').run();
+    }
+    if (!names.has('recorded_role')) {
+      await env.DB.prepare("ALTER TABLE store_visits ADD COLUMN recorded_role TEXT NOT NULL DEFAULT 'admin'").run();
+    }
+    await env.DB.prepare(
+      'CREATE INDEX IF NOT EXISTS idx_store_visits_recorded_by ON store_visits(recorded_by)',
+    ).run();
+  })().catch((error: unknown) => {
+    visitColumnsReady = null;
+    throw error;
+  });
+  return visitColumnsReady;
+}
+
+export async function canAttachToVisit(env: Env, user: AuthUser, id: string): Promise<boolean> {
+  await ensureVisitColumns(env);
+  if (user.role === 'readonly') return false;
+  if (user.role === 'admin') return true;
+  const row = await env.DB.prepare(
+    'SELECT recorded_by FROM store_visits WHERE id = ?',
+  ).bind(id).first<{ recorded_by: string | null }>();
+  if (!row) return true;
+  return row.recorded_by === user.id;
+}
+
+export async function canModifyVisit(env: Env, user: AuthUser, id: string): Promise<boolean> {
+  await ensureVisitColumns(env);
+  if (user.role === 'readonly') return false;
+  if (user.role === 'admin') {
+    const row = await env.DB.prepare('SELECT id FROM store_visits WHERE id = ?').bind(id).first();
+    return Boolean(row);
+  }
+  const row = await env.DB.prepare(
+    'SELECT id FROM store_visits WHERE id = ? AND recorded_by = ?',
+  ).bind(id, user.id).first();
+  return Boolean(row);
 }
 
 export async function handleVisits(request: Request, env: Env, user: AuthUser, id: string | null): Promise<Response> {
-  if (request.method === 'GET' && !id) return listVisits(env);
+  await ensureVisitColumns(env);
+  if (request.method === 'GET' && !id) return listVisits(env, user);
   if (request.method === 'POST' && !id) return writeVisit(request, env, user, null);
   if (request.method === 'PATCH' && id) return writeVisit(request, env, user, id);
   if (request.method === 'DELETE' && id) return deleteVisit(env, user, id);
   return json({ error: 'Method not allowed' }, 405);
 }
 
-async function listVisits(env: Env): Promise<Response> {
-  const { results } = await env.DB.prepare(
-    'SELECT * FROM store_visits ORDER BY date DESC',
-  ).all<VisitRow>();
+async function listVisits(env: Env, user: AuthUser): Promise<Response> {
+  const query = user.role === 'general'
+    ? env.DB.prepare('SELECT * FROM store_visits WHERE recorded_by = ? ORDER BY date DESC').bind(user.id)
+    : env.DB.prepare('SELECT * FROM store_visits ORDER BY date DESC');
+  const { results } = await query.all<VisitRow>();
   return json((results || []).map(toVisit));
 }
 
 async function writeVisit(request: Request, env: Env, user: AuthUser, id: string | null): Promise<Response> {
-  if (user.role !== 'admin') return json({ error: 'Forbidden' }, 403);
+  if (user.role === 'readonly') return json({ error: 'Forbidden' }, 403);
+  if (id && !(await canModifyVisit(env, user, id))) return json({ error: 'Not found' }, 404);
 
   const body = (await request.json()) as Record<string, unknown>;
   const now = new Date().toISOString();
@@ -108,6 +159,8 @@ async function writeVisit(request: Request, env: Env, user: AuthUser, id: string
       columns.push(column);
       values.push(serialize(key, body[key]));
     }
+    columns.push('recorded_by', 'recorded_role');
+    values.push(user.id, user.role === 'general' ? 'general' : 'admin');
     const placeholders = columns.map(() => '?').join(', ');
     await env.DB.prepare(
       `INSERT INTO store_visits (${columns.join(', ')}) VALUES (${placeholders})`,
@@ -131,8 +184,10 @@ async function writeVisit(request: Request, env: Env, user: AuthUser, id: string
 }
 
 async function deleteVisit(env: Env, user: AuthUser, id: string): Promise<Response> {
-  if (user.role !== 'admin') return json({ error: 'Forbidden' }, 403);
-  const result = await env.DB.prepare('DELETE FROM store_visits WHERE id = ?').bind(id).run();
+  if (!(await canModifyVisit(env, user, id))) return json({ error: 'Not found' }, 404);
+  const result = user.role === 'admin'
+    ? await env.DB.prepare('DELETE FROM store_visits WHERE id = ?').bind(id).run()
+    : await env.DB.prepare('DELETE FROM store_visits WHERE id = ? AND recorded_by = ?').bind(id, user.id).run();
   if (result.meta.changes === 0) return json({ error: 'Not found' }, 404);
   return json({ ok: true });
 }
@@ -240,6 +295,8 @@ function toVisit(row: VisitRow) {
     poiName: row.poi_name || undefined,
     poiLicenses: parseJson(row.poi_licenses),
     poiAttributions: parseJson(row.poi_attributions),
+    recordedBy: row.recorded_by || undefined,
+    recordedRole: row.recorded_role === 'general' ? 'general' : 'admin',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

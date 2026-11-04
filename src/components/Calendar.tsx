@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { formatDate } from '../lib/utils';
 import { RANKS } from '../lib/constants';
+import { isGeneralRecord } from './RecordLegend';
 import type { StoreVisit } from '../types';
 
 interface CalendarProps {
@@ -63,15 +64,22 @@ export function Calendar({ currentDate, visits, onDateClick, onAddClick }: Calen
                 {dateObj.getDate()}
               </div>
               <div className="hidden sm:flex flex-col gap-1">
-                {dayVisits.slice(0, 3).map((v) => (
-                  <div
-                    key={v.id}
-                    className={`text-[10px] truncate px-1.5 py-1 rounded border-l-2 ${RANKS[v.rank].border} bg-slate-50 font-medium text-slate-700`}
-                  >
-                    <span className={`${RANKS[v.rank].text} font-bold mr-1`}>{v.rank}</span>
-                    {v.facilityName}
-                  </div>
-                ))}
+                {dayVisits.slice(0, 3).map((v) => {
+                  const general = isGeneralRecord(v.recordedRole);
+                  return (
+                    <div
+                      key={v.id}
+                      className={`text-[10px] truncate px-1.5 py-1 rounded border-l-2 font-medium text-slate-700 ${
+                        general ? 'border-sky-500 bg-sky-100' : `${RANKS[v.rank].border} bg-slate-50`
+                      }`}
+                    >
+                      <span className={`${general ? 'text-sky-700' : RANKS[v.rank].text} font-bold mr-1`}>
+                        {general ? '一般' : v.rank}
+                      </span>
+                      {v.facilityName}
+                    </div>
+                  );
+                })}
                 {dayVisits.length > 3 && (
                   <div className="text-[10px] text-slate-400 pl-1">他 {dayVisits.length - 3} 件...</div>
                 )}
@@ -103,7 +111,10 @@ export function Calendar({ currentDate, visits, onDateClick, onAddClick }: Calen
               </div>
               <div className="flex sm:hidden flex-wrap content-start gap-1 mt-1">
                 {dayVisits.map((v, idx) => (
-                  <div key={idx} className={`w-2 h-2 rounded-full ${RANKS[v.rank].dot}`} />
+                  <div
+                    key={idx}
+                    className={`w-2 h-2 rounded-full ${isGeneralRecord(v.recordedRole) ? 'bg-sky-500 ring-2 ring-sky-200' : RANKS[v.rank].dot}`}
+                  />
                 ))}
               </div>
             </div>

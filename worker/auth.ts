@@ -1,10 +1,12 @@
 import { json } from './http';
 import { hashPassword, secretsEqual, verifyPassword } from './password';
 
+export type UserRole = 'admin' | 'general' | 'readonly';
+
 export interface AuthUser {
   id: string;
   email: string;
-  role: 'admin' | 'readonly';
+  role: UserRole;
 }
 
 const COOKIE = 'bashotori_session';
@@ -14,7 +16,7 @@ interface UserRow {
   id: string;
   email: string;
   password_hash: string;
-  role: 'admin' | 'readonly';
+  role: UserRole;
 }
 
 let schemaReady: Promise<void> | null = null;
@@ -26,7 +28,7 @@ function ensureAuthSchema(env: Env): Promise<void> {
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('admin', 'readonly')),
+      role TEXT NOT NULL CHECK (role IN ('admin', 'general', 'readonly')),
       created_at TEXT NOT NULL
     )`),
     env.DB.prepare(`CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -36,11 +38,31 @@ function ensureAuthSchema(env: Env): Promise<void> {
     )`),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id)'),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at)'),
-  ]).then(() => undefined).catch((error: unknown) => {
+  ]).then(() => allowGeneralRole(env)).catch((error: unknown) => {
     schemaReady = null;
     throw error;
   });
   return schemaReady;
+}
+
+async function allowGeneralRole(env: Env): Promise<void> {
+  const row = await env.DB.prepare(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'app_users'",
+  ).first<{ sql: string }>();
+  if (!row?.sql || row.sql.includes("'general'")) return;
+  await env.DB.batch([
+    env.DB.prepare(`CREATE TABLE app_users_next (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('admin', 'general', 'readonly')),
+      created_at TEXT NOT NULL
+    )`),
+    env.DB.prepare(`INSERT INTO app_users_next (id, email, password_hash, role, created_at)
+      SELECT id, email, password_hash, role, created_at FROM app_users`),
+    env.DB.prepare('DROP TABLE app_users'),
+    env.DB.prepare('ALTER TABLE app_users_next RENAME TO app_users'),
+  ]);
 }
 
 function placeholderHash(): Promise<string> {
@@ -101,7 +123,7 @@ async function insertUser(
   env: Env,
   email: string,
   password: string,
-  role: 'admin' | 'readonly',
+  role: UserRole,
 ): Promise<UserRow> {
   const user: UserRow = {
     id: crypto.randomUUID(),
@@ -201,7 +223,7 @@ async function createUser(request: Request, env: Env, actor: AuthUser): Promise<
   if (body instanceof Response) return body;
   const email = normalizeEmail(body.email);
   const password = typeof body.password === 'string' ? body.password : '';
-  const role = body.role === 'admin' || body.role === 'readonly' ? body.role : null;
+  const role = body.role === 'admin' || body.role === 'general' || body.role === 'readonly' ? body.role : null;
   if (!email || !role || password.length < 8 || password.length > 200) {
     return json({ error: 'メールアドレス、8文字以上のパスワード、ロールが必要です' }, 400);
   }
@@ -218,7 +240,7 @@ async function createUser(request: Request, env: Env, actor: AuthUser): Promise<
 export async function authenticate(request: Request, env: Env): Promise<AuthUser | Response> {
   if (env.ALLOW_DEV_AUTH === '1') {
     const devRole = request.headers.get('X-Dev-User');
-    if (devRole === 'admin' || devRole === 'readonly') {
+    if (devRole === 'admin' || devRole === 'general' || devRole === 'readonly') {
       return { id: 'dev', email: 'dev@localhost', role: devRole };
     }
   }
@@ -232,7 +254,9 @@ export async function authenticate(request: Request, env: Env): Promise<AuthUser
      JOIN app_users u ON u.id = s.user_id
      WHERE s.token_hash = ? AND s.expires_at > ?`,
   ).bind(await tokenHash(token), Math.floor(Date.now() / 1000)).first<AuthUser>();
-  if (!row || (row.role !== 'admin' && row.role !== 'readonly')) return json({ error: 'Unauthorized' }, 401);
+  if (!row || (row.role !== 'admin' && row.role !== 'general' && row.role !== 'readonly')) {
+    return json({ error: 'Unauthorized' }, 401);
+  }
   return publicUser(row);
 }
 

@@ -1,5 +1,6 @@
 import { Icon } from './Icon';
 import { RANKS, JUDGMENT } from '../lib/constants';
+import { isGeneralRecord, RecordSourceBadge } from './RecordLegend';
 import type { StoreVisit } from '../types';
 
 interface DayDetailModalProps {
@@ -52,9 +53,11 @@ export function DayDetailModal({
               <div
                 key={v.id}
                 onClick={() => onEdit && onEdit(v)}
-                className={`group bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-orange-200 transition relative overflow-hidden ${
-                  onEdit ? 'cursor-pointer' : ''
-                }`}
+                className={`group p-4 rounded-xl border shadow-sm hover:shadow-md transition relative overflow-hidden ${
+                  isGeneralRecord(v.recordedRole)
+                    ? 'bg-sky-50 border-sky-200 hover:border-sky-300'
+                    : 'bg-white border-slate-200 hover:border-orange-200'
+                } ${onEdit ? 'cursor-pointer' : ''}`}
               >
                 <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${RANKS[v.rank].dot}`} />
                 <div className="flex justify-between items-start mb-1 pl-2">
@@ -64,6 +67,7 @@ export function DayDetailModal({
                     >
                       {v.rank}ランク
                     </span>
+                    <RecordSourceBadge role={v.recordedRole} />
                     <span
                       className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 ${(JUDGMENT[v.judgment] || JUDGMENT['pending']).color}`}
                     >

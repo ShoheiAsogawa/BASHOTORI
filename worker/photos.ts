@@ -1,5 +1,6 @@
 import type { AuthUser } from './auth';
 import { json } from './http';
+import { canAttachToVisit } from './visits';
 
 const MAX_BYTES = 8 * 1024 * 1024;
 
@@ -25,13 +26,14 @@ export async function readPhoto(env: Env, key: string): Promise<Response> {
 }
 
 async function uploadPhoto(request: Request, env: Env, user: AuthUser): Promise<Response> {
-  if (user.role !== 'admin') return json({ error: 'Forbidden' }, 403);
+  if (user.role === 'readonly') return json({ error: 'Forbidden' }, 403);
   const form = await request.formData();
   const file = form.get('file');
   const visitId = form.get('visitId');
   if (!(file instanceof File)) return json({ error: 'File is required' }, 400);
   if (typeof visitId !== 'string' || !visitId.trim()) return json({ error: 'visitId is required' }, 400);
   if (file.size > MAX_BYTES) return json({ error: 'File is too large' }, 413);
+  if (!(await canAttachToVisit(env, user, visitId.trim()))) return json({ error: 'Not found' }, 404);
 
   const extension = file.type === 'image/png' ? 'png' : 'jpg';
   const key = `${visitId.trim()}/${crypto.randomUUID()}.${extension}`;
@@ -44,7 +46,8 @@ async function uploadPhoto(request: Request, env: Env, user: AuthUser): Promise<
 }
 
 async function deletePhoto(env: Env, user: AuthUser, key: string): Promise<Response> {
-  if (user.role !== 'admin') return json({ error: 'Forbidden' }, 403);
+  const visitId = key.split('/')[0];
+  if (!visitId || !(await canAttachToVisit(env, user, visitId))) return json({ error: 'Not found' }, 404);
   await env.PHOTOS.delete(key);
   return json({ ok: true });
 }

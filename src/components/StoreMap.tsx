@@ -15,6 +15,7 @@ export interface MapPoint {
   visitCount: number;
   address?: string;
   photos?: string[];
+  recordedRole?: 'admin' | 'general' | 'mixed';
 }
 
 const RANK_COLOR: Record<Rank, string> = {
@@ -122,9 +123,10 @@ export function StoreMap({
       const selected = point.id === selectedId;
       const color = RANK_COLOR[point.rank] || RANK_COLOR.C;
       const size = selected ? 18 : 14;
+      const ring = point.recordedRole === 'general' || point.recordedRole === 'mixed' ? '#0284c7' : '#fff';
       const icon = L.divIcon({
         className: 'store-pin',
-        html: `<span style="display:block;width:${size}px;height:${size}px;border-radius:9999px;background:${color};border:2px solid #fff"></span>`,
+        html: `<span style="display:block;width:${size}px;height:${size}px;border-radius:9999px;background:${color};border:3px solid ${ring}"></span>`,
         iconSize: [size, size],
         iconAnchor: [size / 2, size / 2],
       });
@@ -251,7 +253,8 @@ function popupElement(point: MapPoint): HTMLElement {
   dot.style.background = RANK_COLOR[point.rank] || RANK_COLOR.C;
   meta.appendChild(dot);
   const metaText = document.createElement('span');
-  metaText.textContent = [point.prefecture, point.dateLabel, `${point.rank} / ${point.judgmentLabel}`]
+  const sourceLabel = point.recordedRole === 'general' ? '一般の記録' : point.recordedRole === 'mixed' ? '管理者と一般の記録' : '管理者の記録';
+  metaText.textContent = [sourceLabel, point.prefecture, point.dateLabel, `${point.rank} / ${point.judgmentLabel}`]
     .filter(Boolean)
     .join(' · ');
   meta.appendChild(metaText);
