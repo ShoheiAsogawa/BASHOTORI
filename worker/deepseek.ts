@@ -4,6 +4,8 @@ const cors = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+// web_search は deepseek-v4-pro だけが実行する。flash では無視される。
+// 思考は既定で有効（effort: high）になり、施設検索が 110 秒を超える。
 const MODEL = 'deepseek-v4-pro';
 
 interface OutputPart {
@@ -63,10 +65,13 @@ async function callDeepSeek(apiKey: string, prompt: string): Promise<Response> {
       },
       body: JSON.stringify({
         model: MODEL,
-        instructions: 'あなたは日本の商業施設を調べる担当です。ウェブ検索で確認できた事実だけを、日本語のマークダウンで答えてください。',
+        instructions:
+          'あなたは日本の商業施設を調べる担当です。ウェブ検索で確認できた事実だけを、頼まれた日本語のマークダウンで短く答えてください。前置きは不要です。',
         input: prompt,
+        reasoning: { effort: 'none' },
         tools: [{ type: 'web_search' }],
-        tool_choice: { type: 'web_search' },
+        max_output_tokens: 3000,
+        temperature: 0.3,
       }),
       signal: controller.signal,
     });
