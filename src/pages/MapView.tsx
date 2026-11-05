@@ -4,6 +4,7 @@ import { Navbar } from '../components/Navbar';
 import { Icon } from '../components/Icon';
 import { MapFilterBar, sortGroups } from '../components/MapFilterBar';
 import { StoreMap, rankColor, type MapPoint } from '../components/StoreMap';
+import { isGeneralRecord } from '../components/RecordLegend';
 import { getStoreVisits } from '../lib/api';
 import { JUDGMENT } from '../lib/constants';
 import { EMPTY_VISIT_FILTER, groupMatches, type VisitFilterState } from '../lib/visitFilters';
@@ -63,6 +64,7 @@ export default function MapView() {
       visitCount: group.visits.length,
       address: place.address || group.latest.address,
       photos: photoUrls(group.visits),
+      recordedRole: groupSource(group.visits),
     }];
   });
 
@@ -127,7 +129,9 @@ export default function MapView() {
                             onClick={() => {
                               if (place) setSelectedId(group.key);
                             }}
-                            className={`w-full px-4 py-3 text-left ${selected ? 'bg-orange-50' : 'hover:bg-slate-50'} ${place ? '' : 'cursor-default'}`}
+                            className={`w-full px-4 py-3 text-left ${
+                              isGeneralRecord(groupSource(group.visits)) ? 'bg-sky-50' : ''
+                            } ${selected ? 'bg-orange-50' : 'hover:bg-slate-50'} ${place ? '' : 'cursor-default'}`}
                           >
                             <div className="flex items-start gap-2">
                               <span
@@ -219,6 +223,12 @@ function parsePhotoUrls(photoUrl: string | undefined): string[] {
     if (/^https?:\/\//.test(photoUrl)) return [photoUrl];
   }
   return [];
+}
+
+function groupSource(visits: StoreVisit[]): 'admin' | 'general' | 'mixed' {
+  const roles = new Set(visits.map((visit) => (isGeneralRecord(visit.recordedRole) ? 'general' : 'admin')));
+  if (roles.size > 1) return 'mixed';
+  return roles.has('general') ? 'general' : 'admin';
 }
 
 function storedPlace(visits: StoreVisit[]): PoiPlace | null {

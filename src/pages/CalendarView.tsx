@@ -4,9 +4,9 @@ import { Icon } from '../components/Icon';
 import { Calendar } from '../components/Calendar';
 import { StoreFormModal } from '../components/StoreFormModal';
 import { DayDetailModal } from '../components/DayDetailModal';
-import { getStoreVisits, saveStoreVisit, deleteStoreVisit } from '../lib/api';
+import { getStoreVisits, saveStoreVisit, deleteStoreVisit, type VisitWrite } from '../lib/api';
 import { formatDate } from '../lib/utils';
-import { isAdmin } from '../lib/auth';
+import { canEditVisits } from '../lib/auth';
 import type { StoreVisit } from '../types';
 
 export default function CalendarView() {
@@ -19,19 +19,14 @@ export default function CalendarView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRank, setFilterRank] = useState<string>('ALL');
   const [filterJudgment, setFilterJudgment] = useState<string>('ALL');
-  const [userIsAdmin, setUserIsAdmin] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
 
   useEffect(() => {
     loadData().catch((error) => {
       console.error('データ読み込みエラー:', error);
     });
-    checkAdminStatus();
+    canEditVisits().then(setCanEdit).catch(() => setCanEdit(false));
   }, []);
-
-  const checkAdminStatus = async () => {
-    const admin = await isAdmin();
-    setUserIsAdmin(admin);
-  };
 
   const loadData = async () => {
     try {
@@ -44,7 +39,7 @@ export default function CalendarView() {
     }
   };
 
-  const handleSave = async (data: Partial<StoreVisit>): Promise<StoreVisit> => {
+  const handleSave = async (data: VisitWrite): Promise<StoreVisit> => {
     setLoading(true);
     try {
       const savedData = await saveStoreVisit(data);
@@ -173,7 +168,7 @@ export default function CalendarView() {
               </div>
 
               {/* 右側: 新規登録ボタン（管理者のみ） */}
-              {userIsAdmin && (
+              {canEdit && (
                 <div className="flex-shrink-0">
                   <button
                     onClick={() => {
@@ -194,7 +189,7 @@ export default function CalendarView() {
             currentDate={currentDate}
             visits={filteredVisits}
             onDateClick={(date) => setSelectedDateObj(date)}
-            onAddClick={userIsAdmin ? (date) => {
+            onAddClick={canEdit ? (date) => {
               setEditingVisit(null);
               setSelectedDateObj(date);
               setIsFormOpen(true);
@@ -207,15 +202,15 @@ export default function CalendarView() {
         dateObj={selectedDateObj}
         visits={selectedDateObj ? getDayVisits(selectedDateObj) : []}
         onClose={() => setSelectedDateObj(null)}
-        onAdd={userIsAdmin ? () => {
+        onAdd={canEdit ? () => {
           setIsFormOpen(true);
           setEditingVisit(null);
         } : undefined}
-        onEdit={userIsAdmin ? (v) => {
+        onEdit={canEdit ? (v) => {
           setIsFormOpen(true);
           setEditingVisit(v);
         } : undefined}
-        onDelete={userIsAdmin ? handleDelete : undefined}
+        onDelete={canEdit ? handleDelete : undefined}
       />
 
       {isFormOpen && (
@@ -228,7 +223,7 @@ export default function CalendarView() {
           }}
           onSave={handleSave}
           loading={loading}
-          readOnly={!userIsAdmin}
+          readOnly={!canEdit}
         />
       )}
     </div>

@@ -2,13 +2,18 @@ import { authenticate, handleAuth } from './auth';
 import { handleDeepSeek } from './deepseek';
 import { reversePlace } from './nominatim';
 import { corsHeaders, isResponse, json } from './http';
-import { handlePhotos, readPhoto } from './photos';
+import { handlePhotos } from './photos';
 import { handleVisits } from './visits';
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === '/api/gemini') {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: corsHeaders });
+      }
+      const user = await authenticate(request, env);
+      if (isResponse(user)) return user;
       return handleDeepSeek(request, env);
     }
 
@@ -18,12 +23,6 @@ export default {
 
     if (url.pathname.startsWith('/api/auth/')) {
       return handleAuth(request, env, url);
-    }
-
-    if (request.method === 'GET' && url.pathname.startsWith('/api/photos/')) {
-      const key = decodeURIComponent(url.pathname.slice('/api/photos/'.length));
-      if (!key) return json({ error: 'Not found' }, 404);
-      return readPhoto(env, key);
     }
 
     const user = await authenticate(request, env);

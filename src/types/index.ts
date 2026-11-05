@@ -107,6 +107,10 @@ export interface StoreVisit {
   poiName?: string;
   poiLicenses?: string[];
   poiAttributions?: string[];
+
+  // 誰の記録か。未設定の既存データは管理者の記録として扱う
+  recordedBy?: string;
+  recordedRole?: 'admin' | 'general';
   
   createdAt: string;
   updatedAt: string;

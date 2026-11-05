@@ -5,9 +5,14 @@ import { callGemini } from '../lib/gemini';
 import { getCurrentLocation } from '../lib/location';
 import {
   buildStoreSearchPrompt,
+  facilitiesToMarkdown,
+  mergeFacilities,
+  nextResultTarget,
   orderSearchResult,
+  parseSearchFacilities,
   searchArea,
   type Origin,
+  type SearchFacility,
 } from '../lib/nearbySearch';
 import { reverseGeocodePin } from '../lib/api';
 import { marked } from 'marked';
@@ -18,11 +23,17 @@ export default function StoreSearchView() {
   const [locating, setLocating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sorting, setSorting] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [result, setResult] = useState('');
+  const [facilities, setFacilities] = useState<SearchFacility[]>([]);
+  const [exhausted, setExhausted] = useState(false);
   const [hint, setHint] = useState('');
   const requestRef = useRef(0);
+  const facilitiesRef = useRef<SearchFacility[]>([]);
+  const queryRef = useRef<{ area: string; here: Origin | null; unsortedHint: string } | null>(null);
 
-  const busy = locating || loading || sorting;
+  const busy = locating || loading || loadingMore || sorting;
+  const nextCount = nextResultTarget(facilities.length);
 
   const readOrigin = async (force: boolean): Promise<{ here: Origin | null; error: string }> => {
     if (origin && !force) return { here: origin, error: '' };
@@ -47,45 +58,113 @@ export default function StoreSearchView() {
     }
   };
 
-  const runSearch = async (area: string, here: Origin | null, unsortedHint = '現在地が取れないため、距離順には並べていません') => {
+  const showFacilities = async (
+    stored: SearchFacility[],
+    here: Origin | null,
+    requestId: number,
+    unsortedHint: string,
+    visible: number,
+  ) => {
+    const kept = stored.slice(0, 40);
+    const shown = kept.slice(0, visible);
+    facilitiesRef.current = kept;
+    setFacilities(shown);
+    const markdown = facilitiesToMarkdown(shown);
+    if (!here) {
+      setResult(markdown);
+      setHint(unsortedHint);
+      return;
+    }
+
+    setLoading(false);
+    setLoadingMore(false);
+    setSorting(true);
+    const ordered = await orderSearchResult(markdown, here);
+    if (requestId !== requestRef.current) return;
+    setResult(ordered.markdown);
+    if (!ordered.sorted) {
+      setHint('住所から距離を計算できなかったので、検索順のままです');
+    }
+  };
+
+  const runSearch = async (
+    area: string,
+    here: Origin | null,
+    mode: 'new' | 'more',
+    unsortedHint = '現在地が取れないため、距離順には並べていません',
+  ) => {
     const requestId = ++requestRef.current;
+    queryRef.current = { area, here, unsortedHint };
     setHint('');
-    setLoading(true);
-    setResult('');
-    const prompt = buildStoreSearchPrompt(area, here);
+    const existing = mode === 'more' ? facilitiesRef.current : [];
+    const visibleCount = mode === 'more' ? facilities.length : 0;
+    if (mode === 'new') {
+      setLoading(true);
+      setResult('');
+      facilitiesRef.current = [];
+      setFacilities([]);
+      setExhausted(false);
+    } else {
+      setLoadingMore(true);
+    }
+    const target = mode === 'more' ? (nextResultTarget(visibleCount) ?? 20) : 10;
+    const deficit = Math.max(1, target - existing.length);
+    const ask = mode === 'more' && deficit < 5 ? 5 : Math.min(10, deficit);
+    const prompt = buildStoreSearchPrompt(
+      area,
+      here,
+      ask,
+      existing.map((facility) => facility.title),
+    );
 
     try {
+      if (mode === 'more' && existing.length >= target) {
+        await showFacilities(existing, here, requestId, unsortedHint, target);
+        return;
+      }
       const timeoutPromise = new Promise<string>((_, reject) => {
         setTimeout(() => reject(new Error('検索がタイムアウトしました。時間をおいて再度お試しください。')), 120000);
       });
       const response = await Promise.race([callGemini(prompt), timeoutPromise]);
       if (requestId !== requestRef.current) return;
 
-      if (!here) {
-        setResult(response);
-        setHint(unsortedHint);
+      const incoming = parseSearchFacilities(response).facilities;
+      const merged = mergeFacilities(existing, incoming);
+      if (merged.length === 0) {
+        setHint('施設が見つかりませんでした。地域を変えてもう一度検索してください');
         return;
       }
-
-      setLoading(false);
-      setSorting(true);
-      const ordered = await orderSearchResult(response, here);
-      if (requestId !== requestRef.current) return;
-      setResult(ordered.markdown);
-      if (!ordered.sorted) {
-        setHint('住所から距離を計算できなかったので、検索順のままです');
+      if (mode === 'more' && merged.length === existing.length) {
+        setExhausted(true);
+        setHint('ほかの施設は見つかりませんでした');
+        return;
       }
+      const visible = mode === 'new' ? Math.min(10, merged.length) : Math.min(target, merged.length);
+      await showFacilities(merged, here, requestId, unsortedHint, visible);
     } catch (error) {
       if (requestId !== requestRef.current) return;
       const errorMessage = error instanceof Error ? error.message : '不明なエラー';
       console.error('店舗検索エラー:', error);
+      if (mode === 'more') {
+        setHint(errorMessage);
+        return;
+      }
+      facilitiesRef.current = [];
+      setFacilities([]);
       setResult(`❌ 検索エラーが発生しました。\n\n**エラー詳細**: ${errorMessage}\n\n**対処方法**:\n- 時間をおいて、もう一度検索してください\n- ブラウザのコンソール（F12）で詳細なエラーを確認してください`);
     } finally {
       if (requestId === requestRef.current) {
         setLoading(false);
+        setLoadingMore(false);
         setSorting(false);
       }
     }
+  };
+
+  const handleMore = () => {
+    const query = queryRef.current;
+    if (!query || busy) return;
+    void runSearch(query.area, query.here, 'more', query.unsortedHint);
   };
 
   const handleSearch = async (event: React.FormEvent) => {
@@ -97,7 +176,7 @@ export default function StoreSearchView() {
       return;
     }
     if (!location.trim() && here) setLocation(here.label);
-    await runSearch(area, here, error || undefined);
+    await runSearch(area, here, 'new', error || undefined);
   };
 
   const handleNearMe = async () => {
@@ -107,16 +186,18 @@ export default function StoreSearchView() {
       return;
     }
     if (here.label !== '現在地付近') setLocation(here.label);
-    await runSearch(here.label, here);
+    await runSearch(here.label, here, 'new');
   };
 
   const status = locating
     ? '現在地を取得しています'
-    : loading
-      ? '周辺の施設を検索しています'
-      : sorting
-        ? '現在地から近い順に並べています'
-        : '';
+    : loadingMore
+      ? '追加の施設を検索しています'
+      : loading
+        ? '周辺の施設を検索しています'
+        : sorting
+          ? '現在地から近い順に並べています'
+          : '';
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -131,7 +212,7 @@ export default function StoreSearchView() {
               </span>
             </h2>
             <p className="text-sm text-slate-500 mb-6">
-              地域名で探すか、現在地から探すと、いまいる場所から近い順に催事向きの商業施設を出します。
+              地域名で探すか、現在地から探すと、いまいる場所から近い順に催事向きの商業施設を出します。最初は10件、下部の「もっと見る」で20件まで出せます。
             </p>
 
             <form onSubmit={handleSearch} className="flex flex-col gap-2">
@@ -198,6 +279,28 @@ export default function StoreSearchView() {
                   })()
                 }}
               />
+              {facilities.length > 0 && nextCount != null && !exhausted && (
+                <div className="mt-8 border-t border-slate-100 pt-6">
+                  <button
+                    type="button"
+                    onClick={handleMore}
+                    disabled={busy}
+                    className="w-full bg-white text-orange-600 border border-orange-200 px-4 py-3 rounded-xl font-bold hover:bg-orange-50 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-orange-200 border-l-orange-500 rounded-full animate-spin" />
+                        読み込み中
+                      </>
+                    ) : (
+                      <>
+                        <Icon name="ChevronDown" size={18} />
+                        もっと見る（{nextCount}件）
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

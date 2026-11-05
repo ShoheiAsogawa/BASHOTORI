@@ -24,17 +24,20 @@ export async function getStoreVisits(): Promise<StoreVisit[]> {
 
 export type VisitWrite = Omit<Partial<StoreVisit>, 'prefecture' | 'address'> & {
   skipGeocode?: boolean;
+  create?: boolean;
   prefecture?: StoreVisit['prefecture'] | null;
   address?: string | null;
 };
 
 export async function saveStoreVisit(visit: VisitWrite): Promise<StoreVisit> {
-  const path = visit.id ? `/api/visits/${encodeURIComponent(visit.id)}` : '/api/visits';
-  const method = visit.id ? 'PATCH' : 'POST';
+  const create = visit.create === true || !visit.id;
+  const payload: VisitWrite = { ...visit };
+  delete payload.create;
+  const path = create ? '/api/visits' : `/api/visits/${encodeURIComponent(visit.id || '')}`;
   const response = await apiFetch(path, {
-    method,
+    method: create ? 'POST' : 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(visit),
+    body: JSON.stringify(payload),
   });
   return response.json() as Promise<StoreVisit>;
 }

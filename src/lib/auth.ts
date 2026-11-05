@@ -1,9 +1,9 @@
-export type UserRole = 'readonly' | 'admin' | null;
+export type UserRole = 'readonly' | 'admin' | 'general' | null;
 
 export interface SessionUser {
   id: string;
   email: string;
-  role: 'admin' | 'readonly';
+  role: 'admin' | 'readonly' | 'general';
 }
 
 let cached: SessionUser | null | undefined;
@@ -31,7 +31,7 @@ export async function login(email: string, password: string): Promise<SessionUse
     body: JSON.stringify({ email, password }),
   });
   const body = await response.json().catch(() => ({})) as { error?: string; id?: string; email?: string; role?: SessionUser['role'] };
-  if (!response.ok || !body.id || !body.email || (body.role !== 'admin' && body.role !== 'readonly')) {
+  if (!response.ok || !body.id || !body.email || (body.role !== 'admin' && body.role !== 'general' && body.role !== 'readonly')) {
     throw new Error(body.error || 'ログインに失敗しました');
   }
   const user: SessionUser = { id: body.id, email: body.email, role: body.role };
@@ -53,6 +53,11 @@ export async function getUserRole(): Promise<UserRole> {
 export async function isAdmin(): Promise<boolean> {
   const role = await getUserRole();
   return role === 'admin';
+}
+
+export async function canEditVisits(): Promise<boolean> {
+  const role = await getUserRole();
+  return role === 'admin' || role === 'general';
 }
 
 export async function isReadOnly(): Promise<boolean> {

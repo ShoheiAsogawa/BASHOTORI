@@ -82,44 +82,66 @@ export function geocodeQuery(address: string): string {
     .trim();
 }
 
-export function buildStoreSearchPrompt(area: string, origin: Origin | null): string {
+const SEARCH_COUNTS = [10, 20];
+
+/** いまの件数の次に出す件数。10件の次は20件で、20件までです。 */
+export function nextResultTarget(current: number): number | null {
+  return SEARCH_COUNTS.find((size) => size > current) ?? null;
+}
+
+function facilityKey(title: string): string {
+  return title.replace(/[\s　・･\-－]/g, '').toLowerCase();
+}
+
+export function mergeFacilities(existing: SearchFacility[], incoming: SearchFacility[]): SearchFacility[] {
+  const seen = new Set(existing.map((facility) => facilityKey(facility.title)));
+  const merged = [...existing];
+  for (const facility of incoming) {
+    const key = facilityKey(facility.title);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(facility);
+  }
+  return merged;
+}
+
+export function facilitiesToMarkdown(facilities: SearchFacility[]): string {
+  return facilities.map((facility) => `### ${facility.title}\n\n${facility.body}`.trim()).join('\n\n');
+}
+
+export function buildStoreSearchPrompt(
+  area: string,
+  origin: Origin | null,
+  count = 10,
+  exclude: string[] = [],
+): string {
   const center = origin
     ? `検索の中心は現在地（緯度 ${origin.latitude.toFixed(5)}、経度 ${origin.longitude.toFixed(5)}、${origin.label}）です。この地点の近くにある施設を優先して調べてください。`
     : '指定された地域の施設を調べてください。';
+  const skipped = exclude
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .map((name) => `- ${name}`)
+    .join('\n');
+  const exclusion = skipped
+    ? `次の施設はすでに出ているので含めず、別の施設を出してください。\n${skipped}`
+    : '';
 
   return `
-あなたは日本の商業施設リサーチャーです。
-**重要**: ウェブ検索で確認できた、実在する施設だけを答えてください。
-虚偽の情報や推測による情報は一切含めないでください。
+ウェブ検索で確認できた実在の施設だけを答えてください。推測や創作は書かないでください。
 
-以下の地域の、催事イベント（買取イベント）の開催に適した集客力のある商業施設を5〜10件リストアップしてください。
-
-ターゲット地域: ${area}
+${area} で、催事（買取イベント）に向く集客力のある商業施設を${count}件出してください。
 ${center}
+${exclusion}
 
-**検索要件**:
-1. ウェブ検索で、実在する商業施設を調べてください
-2. 各施設について、以下の情報を必ず確認してください：
-   - 施設名（正確な名称）
-   - 正確な住所（都道府県から番地まで）
-   - ジャンル・業種
-
-**出力形式**（マークダウン）:
-前置きは書かず、各施設を次の形式だけで出力してください。距離や所要時間は書かないでください。
+前置きは書かず、各施設を次の形式だけにしてください。距離や所要時間は書かないでください。住所を確認できない施設は省いてください。
 
 ### 施設名
 
 - **ジャンル**:
 - **住所**: 都道府県から番地までの正式な住所
 - **Googleマップ**: [地図を見る](https://www.google.com/maps/search/?api=1&query=施設名+住所)
-- **特徴**: (集客力、客層など、実在する情報のみ)
-
-**注意事項**:
-- 実在しない施設は絶対に含めないでください
-- 推測や創作の情報は含めないでください
-- ウェブ検索で確認できない施設は除外してください
-- 住所は地図検索できる正式な表記にしてください
-- 検索で見つかった出典がある施設だけをリストアップしてください
+- **特徴**: 集客や客層について、確認できたことを1行
   `.trim();
 }
 

@@ -1,4 +1,5 @@
 import type { AuthUser } from './auth';
+import { geocodeStreetAddress } from './gsi';
 import { json } from './http';
 import { locateFacility, type PoiPlace } from './openpoi';
 
@@ -75,64 +76,164 @@ interface VisitRow {
   poi_attributions: string | null;
   created_at: string;
   updated_at: string;
+  recorded_by: string | null;
+  recorded_role: string | null;
+}
+
+let visitColumnsReady: Promise<void> | null = null;
+
+function ensureVisitColumns(env: Env): Promise<void> {
+  visitColumnsReady ??= (async () => {
+    const info = await env.DB.prepare('PRAGMA table_info(store_visits)').all<{ name: string }>();
+    const names = new Set((info.results || []).map((column) => column.name));
+    if (!names.has('recorded_by')) {
+      await env.DB.prepare('ALTER TABLE store_visits ADD COLUMN recorded_by TEXT').run();
+    }
+    if (!names.has('recorded_role')) {
+      await env.DB.prepare("ALTER TABLE store_visits ADD COLUMN recorded_role TEXT NOT NULL DEFAULT 'admin'").run();
+    }
+    await env.DB.prepare(
+      'CREATE INDEX IF NOT EXISTS idx_store_visits_recorded_by ON store_visits(recorded_by)',
+    ).run();
+  })().catch((error: unknown) => {
+    visitColumnsReady = null;
+    throw error;
+  });
+  return visitColumnsReady;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
+export async function visitOwner(env: Env, id: string): Promise<string | null | undefined> {
+  await ensureVisitColumns(env);
+  const row = await env.DB.prepare(
+    'SELECT recorded_by FROM store_visits WHERE id = ?',
+  ).bind(id).first<{ recorded_by: string | null }>();
+  if (!row) return undefined;
+  return row.recorded_by;
+}
+
+export async function canAttachToVisit(env: Env, user: AuthUser, id: string): Promise<boolean> {
+  if (user.role === 'readonly' || !isUuid(id)) return false;
+  if (user.role === 'admin') return true;
+  const owner = await visitOwner(env, id);
+  if (owner === undefined) return true;
+  return owner === user.id;
+}
+
+export async function canModifyVisit(env: Env, user: AuthUser, id: string): Promise<boolean> {
+  await ensureVisitColumns(env);
+  if (user.role === 'readonly') return false;
+  if (user.role === 'admin') {
+    const row = await env.DB.prepare('SELECT id FROM store_visits WHERE id = ?').bind(id).first();
+    return Boolean(row);
+  }
+  const row = await env.DB.prepare(
+    'SELECT id FROM store_visits WHERE id = ? AND recorded_by = ?',
+  ).bind(id, user.id).first();
+  return Boolean(row);
 }
 
 export async function handleVisits(request: Request, env: Env, user: AuthUser, id: string | null): Promise<Response> {
-  if (request.method === 'GET' && !id) return listVisits(env);
+  await ensureVisitColumns(env);
+  if (request.method === 'GET' && !id) return listVisits(env, user);
   if (request.method === 'POST' && !id) return writeVisit(request, env, user, null);
   if (request.method === 'PATCH' && id) return writeVisit(request, env, user, id);
   if (request.method === 'DELETE' && id) return deleteVisit(env, user, id);
   return json({ error: 'Method not allowed' }, 405);
 }
 
-async function listVisits(env: Env): Promise<Response> {
-  const { results } = await env.DB.prepare(
-    'SELECT * FROM store_visits ORDER BY date DESC',
-  ).all<VisitRow>();
+async function listVisits(env: Env, user: AuthUser): Promise<Response> {
+  const query = user.role === 'general'
+    ? env.DB.prepare('SELECT * FROM store_visits WHERE recorded_by = ? ORDER BY date DESC').bind(user.id)
+    : env.DB.prepare('SELECT * FROM store_visits ORDER BY date DESC');
+  const { results } = await query.all<VisitRow>();
   return json((results || []).map(toVisit));
 }
 
-async function writeVisit(request: Request, env: Env, user: AuthUser, id: string | null): Promise<Response> {
-  if (user.role !== 'admin') return json({ error: 'Forbidden' }, 403);
+const REQUIRED_FIELDS = ['date', 'facilityName', 'staffName', 'rank', 'judgment', 'environment', 'imitationTable'] as const;
 
-  const body = (await request.json()) as Record<string, unknown>;
+async function readBody(request: Request): Promise<Record<string, unknown> | Response> {
+  const length = Number(request.headers.get('content-length') || 0);
+  if (length > 1_000_000) return json({ error: 'リクエストが大きすぎます' }, 413);
+  try {
+    const body = await request.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ error: '不正なリクエストです' }, 400);
+    return body as Record<string, unknown>;
+  } catch {
+    return json({ error: '不正なリクエストです' }, 400);
+  }
+}
+
+function hasRequiredFields(body: Record<string, unknown>): boolean {
+  return REQUIRED_FIELDS.every((key) => typeof body[key] === 'string' && body[key].trim().length > 0);
+}
+
+async function writeVisit(request: Request, env: Env, user: AuthUser, id: string | null): Promise<Response> {
+  if (user.role === 'readonly') return json({ error: 'Forbidden' }, 403);
+  const body = await readBody(request);
+  if (body instanceof Response) return body;
+  if (id && !(await canModifyVisit(env, user, id))) return json({ error: 'Not found' }, 404);
+
   const now = new Date().toISOString();
+  let visitId = id;
+  if (!visitId) {
+    if (!hasRequiredFields(body)) return json({ error: '必須項目が不足しています' }, 400);
+    const requested = typeof body.id === 'string' ? body.id.trim().toLowerCase() : '';
+    visitId = isUuid(requested) ? requested : crypto.randomUUID();
+    if ((await visitOwner(env, visitId)) !== undefined) return json({ error: 'Not found' }, 404);
+  }
   await ensureLocation(body, id, env);
 
-  if (!id) {
-    const visitId = crypto.randomUUID();
-    const columns = ['id', 'created_at', 'updated_at'];
-    const values: unknown[] = [visitId, now, now];
+  try {
+    if (!id) {
+      const columns = ['id', 'created_at', 'updated_at'];
+      const values: unknown[] = [visitId, now, now];
+      for (const [key, column] of Object.entries(COLUMNS)) {
+        if (!(key in body)) continue;
+        columns.push(column);
+        values.push(serialize(key, body[key]));
+      }
+      columns.push('recorded_by', 'recorded_role');
+      values.push(user.id, user.role === 'general' ? 'general' : 'admin');
+      const placeholders = columns.map(() => '?').join(', ');
+      await env.DB.prepare(
+        `INSERT INTO store_visits (${columns.join(', ')}) VALUES (${placeholders})`,
+      ).bind(...values).run();
+      return json(await readVisit(env, visitId), 201);
+    }
+
+    const assignments = ['updated_at = ?'];
+    const values: unknown[] = [now];
     for (const [key, column] of Object.entries(COLUMNS)) {
       if (!(key in body)) continue;
-      columns.push(column);
+      assignments.push(`${column} = ?`);
       values.push(serialize(key, body[key]));
     }
-    const placeholders = columns.map(() => '?').join(', ');
-    await env.DB.prepare(
-      `INSERT INTO store_visits (${columns.join(', ')}) VALUES (${placeholders})`,
-    ).bind(...values).run();
-    return json(await readVisit(env, visitId), 201);
+    values.push(id);
+    let sql = `UPDATE store_visits SET ${assignments.join(', ')} WHERE id = ?`;
+    if (user.role !== 'admin') {
+      sql += ' AND recorded_by = ?';
+      values.push(user.id);
+    }
+    const result = await env.DB.prepare(sql).bind(...values).run();
+    if (result.meta.changes === 0) return json({ error: 'Not found' }, 404);
+    return json(await readVisit(env, id));
+  } catch (error) {
+    console.error('visit write failed', error instanceof Error ? error.message : 'unknown');
+    return json({ error: '保存できませんでした' }, 400);
   }
-
-  const assignments = ['updated_at = ?'];
-  const values: unknown[] = [now];
-  for (const [key, column] of Object.entries(COLUMNS)) {
-    if (!(key in body)) continue;
-    assignments.push(`${column} = ?`);
-    values.push(serialize(key, body[key]));
-  }
-  values.push(id);
-  const result = await env.DB.prepare(
-    `UPDATE store_visits SET ${assignments.join(', ')} WHERE id = ?`,
-  ).bind(...values).run();
-  if (result.meta.changes === 0) return json({ error: 'Not found' }, 404);
-  return json(await readVisit(env, id));
 }
 
 async function deleteVisit(env: Env, user: AuthUser, id: string): Promise<Response> {
-  if (user.role !== 'admin') return json({ error: 'Forbidden' }, 403);
-  const result = await env.DB.prepare('DELETE FROM store_visits WHERE id = ?').bind(id).run();
+  if (!(await canModifyVisit(env, user, id))) return json({ error: 'Not found' }, 404);
+  const result = user.role === 'admin'
+    ? await env.DB.prepare('DELETE FROM store_visits WHERE id = ?').bind(id).run()
+    : await env.DB.prepare('DELETE FROM store_visits WHERE id = ? AND recorded_by = ?').bind(id, user.id).run();
   if (result.meta.changes === 0) return json({ error: 'Not found' }, 404);
   return json({ ok: true });
 }
@@ -163,8 +264,26 @@ async function ensureLocation(body: Record<string, unknown>, id: string | null, 
   if (body.skipGeocode === true) return;
   if (hasCoordinates(latitude, longitude) || facilityName.trim().length < 2) return;
 
+  const address = typeof body.address === 'string' ? body.address.trim() : '';
+  if (address) {
+    try {
+      const street = await geocodeStreetAddress(address, prefecture || undefined, AbortSignal.timeout(8000));
+      if (street) {
+        body.latitude = street.latitude;
+        body.longitude = street.longitude;
+        body.poiName = facilityName;
+        body.poiLicenses = [];
+        body.poiAttributions = ['国土地理院'];
+        if (!prefecture && street.prefecture) body.prefecture = street.prefecture;
+        return;
+      }
+    } catch (error) {
+      console.error('Address geocode failed', error instanceof Error ? error.message : 'unknown');
+    }
+  }
+
   try {
-    const place = await locateFacility(facilityName, prefecture || undefined, AbortSignal.timeout(20000));
+    const place = await locateFacility(facilityName, prefecture || undefined, AbortSignal.timeout(40000));
     if (!place) return;
     assignPlace(body, place, prefecture);
   } catch (error) {
@@ -240,6 +359,8 @@ function toVisit(row: VisitRow) {
     poiName: row.poi_name || undefined,
     poiLicenses: parseJson(row.poi_licenses),
     poiAttributions: parseJson(row.poi_attributions),
+    recordedBy: row.recorded_by || undefined,
+    recordedRole: row.recorded_role === 'general' ? 'general' : 'admin',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

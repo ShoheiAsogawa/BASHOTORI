@@ -15,6 +15,7 @@ export interface MapPoint {
   visitCount: number;
   address?: string;
   photos?: string[];
+  recordedRole?: 'admin' | 'general' | 'mixed';
 }
 
 const RANK_COLOR: Record<Rank, string> = {
@@ -122,9 +123,10 @@ export function StoreMap({
       const selected = point.id === selectedId;
       const color = RANK_COLOR[point.rank] || RANK_COLOR.C;
       const size = selected ? 18 : 14;
+      const ring = point.recordedRole === 'general' || point.recordedRole === 'mixed' ? '#0284c7' : '#fff';
       const icon = L.divIcon({
         className: 'store-pin',
-        html: `<span style="display:block;width:${size}px;height:${size}px;border-radius:9999px;background:${color};border:2px solid #fff"></span>`,
+        html: `<span style="display:block;width:${size}px;height:${size}px;border-radius:9999px;background:${color};border:3px solid ${ring}"></span>`,
         iconSize: [size, size],
         iconAnchor: [size / 2, size / 2],
       });
@@ -323,9 +325,12 @@ function photoButton(label: string, glyph: string, onClick: () => void, side: 'l
 }
 
 function draftIcon(): L.DivIcon {
+  const sky = document.documentElement.dataset.theme === 'general';
+  const fill = sky ? '#0ea5e9' : '#ea580c';
+  const shadow = sky ? 'rgba(14,165,233,.55)' : 'rgba(234,88,12,.55)';
   return L.divIcon({
     className: 'store-pin',
-    html: '<span style="display:block;width:22px;height:22px;border-radius:9999px;background:#ea580c;border:3px solid #fff;box-shadow:0 2px 8px rgba(234,88,12,.55)"></span>',
+    html: `<span style="display:block;width:22px;height:22px;border-radius:9999px;background:${fill};border:3px solid #fff;box-shadow:0 2px 8px ${shadow}"></span>`,
     iconSize: [22, 22],
     iconAnchor: [11, 11],
   });

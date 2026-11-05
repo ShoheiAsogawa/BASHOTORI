@@ -6,7 +6,7 @@ import { formatDate, generateId } from '../lib/utils';
 import { uploadImage, deleteImage, compressImage } from '../lib/storage';
 import { locateFacility, suggestPlaces, writePoiCache, type PoiPlace } from '../lib/openpoi';
 import { getCurrentLocation } from '../lib/location';
-import { reverseGeocodePin } from '../lib/api';
+import { reverseGeocodePin, type VisitWrite } from '../lib/api';
 import { StoreMap, type DraftPin, type MapFocus } from './StoreMap';
 import type { StoreVisit, Photo, CustomerSegment } from '../types';
 
@@ -14,7 +14,7 @@ interface StoreFormModalProps {
   initialData?: StoreVisit | null;
   selectedDate?: Date | null;
   onClose: () => void;
-  onSave: (data: Partial<StoreVisit> & { skipGeocode?: boolean }) => Promise<StoreVisit>;
+  onSave: (data: VisitWrite) => Promise<StoreVisit>;
   loading: boolean;
   readOnly?: boolean; // 読み取り専用モード
   onEdit?: () => void; // 編集モードに切り替えるコールバック
@@ -212,16 +212,16 @@ export function StoreFormModal({
         photoUrl: JSON.stringify(formData.photos),
         prefecture: (formData.prefecture || undefined) as Prefecture | undefined,
         skipGeocode: formData.latitude != null && formData.longitude != null,
-      } as Partial<StoreVisit> & { skipGeocode?: boolean };
-      delete (submitData as any).photos;
-      
-      // 新規登録の場合はidを削除（データベースが自動生成するため）
-      if (!initialData) {
-        delete (submitData as any).id;
-      }
+        create: !initialData,
+      } as VisitWrite;
+      delete (submitData as { photos?: unknown }).photos;
       
       const savedData = await onSave(submitData);
-      
+      const savedHasPin = savedData.latitude != null && savedData.longitude != null;
+      if (formData.latitude == null && formData.longitude == null && !savedHasPin) {
+        alert('保存しました。住所か店舗名から位置を特定できなかったので、地図には載っていません。番地までの住所を入れるか、地図をタップしてください。');
+      }
+
       // 保存完了のトーストを表示
       setShowSuccessToast(true);
       setTimeout(() => {

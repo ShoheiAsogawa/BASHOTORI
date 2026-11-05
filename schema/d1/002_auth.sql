@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS app_users (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('admin', 'readonly')),
+  role TEXT NOT NULL CHECK (role IN ('admin', 'general', 'readonly')),
   created_at TEXT NOT NULL
 );
 

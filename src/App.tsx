@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useLayoutEffect, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import CalendarView from './pages/CalendarView';
 import DashboardView from './pages/DashboardView';
@@ -22,6 +22,12 @@ function App() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    if (user?.role === 'general') root.dataset.theme = 'general';
+    else delete root.dataset.theme;
+  }, [user]);
 
   if (loading) {
     return (

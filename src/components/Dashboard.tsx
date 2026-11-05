@@ -4,7 +4,9 @@ import { StoreFormModal } from './StoreFormModal';
 import { RANKS, JUDGMENT, ENVIRONMENTS, REGISTER_COUNTS, TRAFFIC_LEVELS, SEASONALITY_OPTIONS, BUSY_DAY_OPTIONS, STAFF_COUNTS, SPACE_SIZES, COMPETITOR_COUNTS } from '../lib/constants';
 import { PREFECTURES } from '../types';
 import { formatDateJP } from '../lib/utils';
-import { isAdmin } from '../lib/auth';
+import { canEditVisits } from '../lib/auth';
+import type { VisitWrite } from '../lib/api';
+import { isGeneralRecord } from './RecordLegend';
 import type { StoreVisit } from '../types';
 import * as XLSX from 'xlsx';
 
@@ -40,7 +42,7 @@ interface DashboardProps {
   filterMonth: string;
   onFilterMonthChange: (month: string) => void;
   filteredVisits: StoreVisit[];
-  onSave: (data: Partial<StoreVisit>) => Promise<StoreVisit>;
+  onSave: (data: VisitWrite) => Promise<StoreVisit>;
   loading: boolean;
 }
 
@@ -84,15 +86,14 @@ export function Dashboard({
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [selectedVisit, setSelectedVisit] = useState<StoreVisit | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [userIsAdmin, setUserIsAdmin] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
 
   useEffect(() => {
     checkAdminStatus();
   }, []);
 
   const checkAdminStatus = async () => {
-    const admin = await isAdmin();
-    setUserIsAdmin(admin);
+    setCanEdit(await canEditVisits());
   };
 
   const sortedVisits = useMemo(() => {
@@ -1040,7 +1041,9 @@ export function Dashboard({
                                 setIsDetailModalOpen(true);
                               }
                             }}
-                            className="hover:bg-slate-50 transition cursor-pointer"
+                            className={`transition cursor-pointer ${
+                              isGeneralRecord(visit.recordedRole) ? 'bg-sky-50 hover:bg-sky-100' : 'hover:bg-slate-50'
+                            }`}
                           >
                             <td className="px-4 py-3 text-slate-700 font-medium">
                               {formatDateJP(visit.date)}
@@ -1102,8 +1105,8 @@ export function Dashboard({
           }}
           onSave={onSave}
           loading={loading}
-          readOnly={!userIsAdmin}
-          onEdit={userIsAdmin ? () => {
+          readOnly={!canEdit}
+          onEdit={canEdit ? () => {
             setIsDetailModalOpen(false);
             // 編集モードで開く（親コンポーネントで処理）
           } : undefined}
