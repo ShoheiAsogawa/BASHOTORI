@@ -70,7 +70,7 @@ async function callDeepSeek(apiKey: string, prompt: string): Promise<Response> {
         input: prompt,
         reasoning: { effort: 'none' },
         tools: [{ type: 'web_search' }],
-        max_output_tokens: 3000,
+        max_output_tokens: 6000,
         temperature: 0.3,
       }),
       signal: controller.signal,

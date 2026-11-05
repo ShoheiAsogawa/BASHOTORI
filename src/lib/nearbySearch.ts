@@ -82,16 +82,57 @@ export function geocodeQuery(address: string): string {
     .trim();
 }
 
-export function buildStoreSearchPrompt(area: string, origin: Origin | null): string {
+const SEARCH_COUNTS = [10, 20];
+
+/** いまの件数の次に出す件数。10件の次は20件で、20件までです。 */
+export function nextResultTarget(current: number): number | null {
+  return SEARCH_COUNTS.find((size) => size > current) ?? null;
+}
+
+function facilityKey(title: string): string {
+  return title.replace(/[\s　・･\-－]/g, '').toLowerCase();
+}
+
+export function mergeFacilities(existing: SearchFacility[], incoming: SearchFacility[]): SearchFacility[] {
+  const seen = new Set(existing.map((facility) => facilityKey(facility.title)));
+  const merged = [...existing];
+  for (const facility of incoming) {
+    const key = facilityKey(facility.title);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(facility);
+  }
+  return merged;
+}
+
+export function facilitiesToMarkdown(facilities: SearchFacility[]): string {
+  return facilities.map((facility) => `### ${facility.title}\n\n${facility.body}`.trim()).join('\n\n');
+}
+
+export function buildStoreSearchPrompt(
+  area: string,
+  origin: Origin | null,
+  count = 10,
+  exclude: string[] = [],
+): string {
   const center = origin
     ? `検索の中心は現在地（緯度 ${origin.latitude.toFixed(5)}、経度 ${origin.longitude.toFixed(5)}、${origin.label}）です。この地点の近くにある施設を優先して調べてください。`
     : '指定された地域の施設を調べてください。';
+  const skipped = exclude
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .map((name) => `- ${name}`)
+    .join('\n');
+  const exclusion = skipped
+    ? `次の施設はすでに出ているので含めず、別の施設を出してください。\n${skipped}`
+    : '';
 
   return `
 ウェブ検索で確認できた実在の施設だけを答えてください。推測や創作は書かないでください。
 
-${area} で、催事（買取イベント）に向く集客力のある商業施設を5件出してください。
+${area} で、催事（買取イベント）に向く集客力のある商業施設を${count}件出してください。
 ${center}
+${exclusion}
 
 前置きは書かず、各施設を次の形式だけにしてください。距離や所要時間は書かないでください。住所を確認できない施設は省いてください。
 
