@@ -217,7 +217,11 @@ export function StoreFormModal({
       delete (submitData as { photos?: unknown }).photos;
       
       const savedData = await onSave(submitData);
-      
+      const savedHasPin = savedData.latitude != null && savedData.longitude != null;
+      if (formData.latitude == null && formData.longitude == null && !savedHasPin) {
+        alert('保存しました。住所か店舗名から位置を特定できなかったので、地図には載っていません。番地までの住所を入れるか、地図をタップしてください。');
+      }
+
       // 保存完了のトーストを表示
       setShowSuccessToast(true);
       setTimeout(() => {

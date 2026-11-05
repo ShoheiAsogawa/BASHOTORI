@@ -89,8 +89,12 @@ const BRANDS = [
   'カナートモール',
   '近商ストア',
   'スーパーストア',
+  '関西スーパー',
+  'ナフコ不二屋',
+  'フランテロゼ',
   'コーナン',
   'ヤマナカ',
+  'ヨシヅヤ',
   'コノミヤ',
   'ニトリ',
   'マルナカ',
@@ -133,6 +137,7 @@ const ALIASES: Array<[RegExp, string]> = [
   [/Amity/gi, 'アミティ'],
   [/DCM/gi, 'ディーシーエム'],
   [/マックスバリュ(?!ー)/g, 'マックスバリュー'],
+  [/イオンスタイルダイエー/g, 'ダイエー'],
 ];
 
 interface PoiItem {
@@ -189,6 +194,7 @@ export function queryForms(name: string): string[] {
 export function applyAliases(name: string): string {
   let value = cleanFacilityQuery(name);
   for (const [pattern, replacement] of ALIASES) value = value.replace(pattern, replacement);
+  if (value.includes('ヨシヅヤ')) value = value.replace(/\s*Yストア\s*/g, '');
   return value.replace(/街/g, '町');
 }
 
@@ -448,7 +454,8 @@ function scoreOne(query: string, prefecture: string | undefined, place: PoiPlace
   const fit = prefectureFit(prefecture, place);
   if (fit === 'match') score += 30;
   else if (fit === 'mismatch') {
-    const tail = locationFold || normalizedQuery;
+    const bbox = prefecture ? PREFECTURE_BBOX[prefecture] : undefined;
+    if (bbox && !insideBBox(place, bbox)) return 0;
     if (kind !== 'name' || tail.length < 2 || GENERIC_TAILS.has(tail)) return 0;
     score -= 50;
   } else if (kind === 'split') {

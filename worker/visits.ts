@@ -1,4 +1,5 @@
 import type { AuthUser } from './auth';
+import { geocodeStreetAddress } from './gsi';
 import { json } from './http';
 import { locateFacility, type PoiPlace } from './openpoi';
 
@@ -263,8 +264,26 @@ async function ensureLocation(body: Record<string, unknown>, id: string | null, 
   if (body.skipGeocode === true) return;
   if (hasCoordinates(latitude, longitude) || facilityName.trim().length < 2) return;
 
+  const address = typeof body.address === 'string' ? body.address.trim() : '';
+  if (address) {
+    try {
+      const street = await geocodeStreetAddress(address, prefecture || undefined, AbortSignal.timeout(8000));
+      if (street) {
+        body.latitude = street.latitude;
+        body.longitude = street.longitude;
+        body.poiName = facilityName;
+        body.poiLicenses = [];
+        body.poiAttributions = ['国土地理院'];
+        if (!prefecture && street.prefecture) body.prefecture = street.prefecture;
+        return;
+      }
+    } catch (error) {
+      console.error('Address geocode failed', error instanceof Error ? error.message : 'unknown');
+    }
+  }
+
   try {
-    const place = await locateFacility(facilityName, prefecture || undefined, AbortSignal.timeout(20000));
+    const place = await locateFacility(facilityName, prefecture || undefined, AbortSignal.timeout(40000));
     if (!place) return;
     assignPlace(body, place, prefecture);
   } catch (error) {
